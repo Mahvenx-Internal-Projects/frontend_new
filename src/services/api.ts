@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api',
+  baseURL: '/api',
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -221,6 +221,7 @@ export const mockTestApi = {
   publish:        (id: number) => api.put(`/mocktests/${id}/publish`),
   delete:         (id: number) => api.delete(`/mocktests/${id}`),
   addQuestion:    (testId: number, d: object) => api.post(`/mocktests/${testId}/questions`, d),
+  updateQuestion: (qId: number, d: object)   => api.put(`/mocktests/questions/${qId}`, d),
   deleteQuestion: (qId: number) => api.delete(`/mocktests/questions/${qId}`),
   start:          (d: object) => api.post('/mocktests/start', d),
   submit:         (d: object) => api.post('/mocktests/submit', d),

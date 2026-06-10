@@ -80,7 +80,7 @@ function QuestionForm({
           : options.filter(o => o.text.trim()),
       };
       return question
-        ? mockTestApi.update(question.id, payload)  // updateQuestion
+        ? mockTestApi.updateQuestion(question.id, payload)
         : mockTestApi.addQuestion(testId, payload);
     },
     onSuccess: () => { toast.success(question ? 'Question updated' : 'Question added'); onSaved(); },

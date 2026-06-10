@@ -98,7 +98,10 @@ export default function FileUpload({ type, folder, onUploaded, onError, accept, 
         resolve(null);
       };
 
-      const endpoint = `/api/upload/${type}${folder ? `?folder=${folder}` : ''}`;
+      // For video uploads, go DIRECTLY to backend to bypass Vite proxy 413 limit
+      const isVideo = type === 'video';
+      const backendBase = isVideo ? 'https://localhost:7001' : '';
+      const endpoint = `${backendBase}/api/upload/${type}${folder ? `?folder=${folder}` : ''}`;
       xhr.open('POST', endpoint);
       if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
       xhr.send(formData);

@@ -5,9 +5,9 @@ import type { User } from '../types';
 interface AuthState {
   user: User | null;
   token: string | null;
+  isAuthenticated: boolean;
   setAuth: (user: User, token: string) => void;
   logout: () => void;
-  isAuthenticated: boolean;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -25,6 +25,10 @@ export const useAuthStore = create<AuthState>()(
         set({ user: null, token: null, isAuthenticated: false });
       },
     }),
-    { name: 'lms_auth', partialize: (s) => ({ user: s.user, token: s.token }) }
+    {
+      name: 'lms_auth',
+      // Persist all three — so refresh restores isAuthenticated
+      partialize: (s) => ({ user: s.user, token: s.token, isAuthenticated: s.isAuthenticated }),
+    }
   )
 );

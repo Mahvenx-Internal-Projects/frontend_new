@@ -1,82 +1,76 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Plus, Trash2, GripVertical, Save, ArrowLeft, Eye, EyeOff,
-  Type, Image, Film, Music, FileText, Minus, AlertCircle, Code2,
-  ChevronUp, ChevronDown, Settings, CheckCircle2
+  ArrowLeft, Save, Plus, Trash2, GripVertical,
+  ChevronUp, ChevronDown, Eye, EyeOff, CheckCircle2,
+  Video, Music, Image, FileText, AlertCircle, Code2,
+  AlignLeft, Minus, BookOpen, Globe, Lock, Clock
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import api from '../../services/api';
 import FileUpload from '../../components/shared/FileUpload';
 import RichTextEditor from '../../components/shared/RichTextEditor';
 import clsx from 'clsx';
 
-// ─── Types ─────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────
 type BlockType = 'Heading'|'Text'|'Image'|'Video'|'Audio'|'PDF'|'File'|'Divider'|'Callout'|'Code';
 
 interface Block {
-  type: BlockType;
-  order: number;
+  type: BlockType; order: number;
   headingText?: string; headingLevel?: number;
   textContent?: string;
   imageUrl?: string; imageCaption?: string; imageAlign?: string;
-  videoUrl?: string; videoTitle?: string; videoDurationSecs?: number; videoThumbnail?: string;
+  videoUrl?: string; videoTitle?: string; videoDurationSecs?: number;
+  _videoMode?: 'upload'|'url';
   audioUrl?: string; audioTitle?: string;
   fileUrl?: string; fileName?: string; fileSizeBytes?: number; embedPdf?: boolean;
   calloutText?: string; calloutStyle?: string;
   codeContent?: string; codeLanguage?: string;
 }
 
-const BLOCK_TYPES: { type: BlockType; icon: React.ReactNode; label: string; color: string }[] = [
-  { type: 'Heading', icon: <Type className="w-4 h-4" />, label: 'Heading', color: 'bg-gray-100 text-gray-700' },
-  { type: 'Text',    icon: <FileText className="w-4 h-4" />, label: 'Text', color: 'bg-blue-50 text-blue-700' },
-  { type: 'Image',   icon: <Image className="w-4 h-4" />, label: 'Image', color: 'bg-green-50 text-green-700' },
-  { type: 'Video',   icon: <Film className="w-4 h-4" />, label: 'Video', color: 'bg-purple-50 text-purple-700' },
-  { type: 'Audio',   icon: <Music className="w-4 h-4" />, label: 'Audio', color: 'bg-amber-50 text-amber-700' },
-  { type: 'PDF',     icon: <FileText className="w-4 h-4" />, label: 'PDF', color: 'bg-red-50 text-red-700' },
-  { type: 'File',    icon: <FileText className="w-4 h-4" />, label: 'File', color: 'bg-orange-50 text-orange-700' },
-  { type: 'Callout', icon: <AlertCircle className="w-4 h-4" />, label: 'Callout', color: 'bg-yellow-50 text-yellow-700' },
-  { type: 'Code',    icon: <Code2 className="w-4 h-4" />, label: 'Code', color: 'bg-indigo-50 text-indigo-700' },
-  { type: 'Divider', icon: <Minus className="w-4 h-4" />, label: 'Divider', color: 'bg-gray-50 text-gray-500' },
+const BLOCK_PALETTE: { type: BlockType; icon: React.ReactNode; label: string; color: string; bg: string; desc: string }[] = [
+  { type:'Heading', icon:<AlignLeft  className="w-4 h-4"/>, label:'Heading',  color:'text-gray-700',    bg:'bg-gray-100',    desc:'H1 / H2 / H3' },
+  { type:'Text',    icon:<FileText   className="w-4 h-4"/>, label:'Text',     color:'text-blue-700',    bg:'bg-blue-50',     desc:'Rich paragraph' },
+  { type:'Image',   icon:<Image      className="w-4 h-4"/>, label:'Image',    color:'text-green-700',   bg:'bg-green-50',    desc:'Upload or URL' },
+  { type:'Video',   icon:<Video      className="w-4 h-4"/>, label:'Video',    color:'text-purple-700',  bg:'bg-purple-50',   desc:'Upload or YouTube' },
+  { type:'Audio',   icon:<Music      className="w-4 h-4"/>, label:'Audio',    color:'text-amber-700',   bg:'bg-amber-50',    desc:'MP3 / WAV' },
+  { type:'PDF',     icon:<FileText   className="w-4 h-4"/>, label:'PDF',      color:'text-red-700',     bg:'bg-red-50',      desc:'Embed viewer' },
+  { type:'File',    icon:<FileText   className="w-4 h-4"/>, label:'File',     color:'text-orange-700',  bg:'bg-orange-50',   desc:'Download link' },
+  { type:'Callout', icon:<AlertCircle className="w-4 h-4"/>,label:'Callout',  color:'text-yellow-700',  bg:'bg-yellow-50',   desc:'Info / Warning' },
+  { type:'Code',    icon:<Code2      className="w-4 h-4"/>, label:'Code',     color:'text-indigo-700',  bg:'bg-indigo-50',   desc:'Syntax highlight' },
+  { type:'Divider', icon:<Minus      className="w-4 h-4"/>, label:'Divider',  color:'text-gray-500',    bg:'bg-gray-50',     desc:'Separator line' },
 ];
 
-function defaultBlock(type: BlockType): Block {
-  const base = { type, order: 0 };
-  switch (type) {
-    case 'Heading': return { ...base, headingText: 'New Heading', headingLevel: 2 };
-    case 'Text':    return { ...base, textContent: 'Enter your text here...' };
-    case 'Image':   return { ...base, imageAlign: 'center' };
-    case 'Video':   return { ...base, videoTitle: '' };
-    case 'Audio':   return { ...base, audioTitle: '' };
-    case 'PDF':     return { ...base, embedPdf: true };
-    case 'File':    return { ...base };
-    case 'Callout': return { ...base, calloutText: '', calloutStyle: 'info' };
-    case 'Code':    return { ...base, codeContent: '', codeLanguage: 'javascript' };
-    default:        return base;
-  }
+function fmtSecs(s: number) {
+  if (!s) return '';
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+  if (h) return `${h}h ${m}m`;
+  return m ? `${m}m ${sec}s` : `${sec}s`;
 }
 
-// ─── Block editor components ───────────────────────────────────
+// ─── Individual block editors ─────────────────────────────────
 function BlockEditor({ block, onChange }: { block: Block; onChange: (b: Block) => void }) {
-  const u = (patch: Partial<Block>) => onChange({ ...block, ...patch });
+  const u = (p: Partial<Block>) => onChange({ ...block, ...p });
+  // Normalize to PascalCase to handle old lowercase data from DB
+  const t = block.type ? (block.type.charAt(0).toUpperCase() + block.type.slice(1).toLowerCase()) as BlockType : block.type;
 
-  switch (block.type) {
+  switch (t) {
+
     case 'Heading': return (
-      <div className="space-y-2">
+      <div className="space-y-3">
         <div className="flex gap-2">
-          <select className="input w-28" value={block.headingLevel ?? 2} onChange={e => u({ headingLevel: Number(e.target.value) })}>
-            <option value={1}>H1 - Title</option>
-            <option value={2}>H2 - Section</option>
-            <option value={3}>H3 - Sub</option>
+          <select className="input w-32 text-sm font-semibold" value={block.headingLevel ?? 2}
+            onChange={e => u({ headingLevel: +e.target.value })}>
+            <option value={1}>H1 — Big Title</option>
+            <option value={2}>H2 — Section</option>
+            <option value={3}>H3 — Sub-section</option>
           </select>
-          <input className="input flex-1 font-bold" placeholder="Heading text…"
+          <input className="input flex-1 font-bold text-base" placeholder="Type your heading…"
             value={block.headingText ?? ''} onChange={e => u({ headingText: e.target.value })} />
         </div>
-        <div className="p-3 bg-gray-50 rounded-xl">
-          {block.headingLevel === 1 && <p className="text-2xl font-black text-gray-900">{block.headingText || 'Heading 1'}</p>}
-          {block.headingLevel === 2 && <p className="text-xl font-bold text-gray-900">{block.headingText || 'Heading 2'}</p>}
-          {block.headingLevel === 3 && <p className="text-lg font-semibold text-gray-800">{block.headingText || 'Heading 3'}</p>}
+        <div className="px-4 py-3 bg-gray-50 rounded-xl border border-gray-200">
+          {block.headingLevel === 1 && <p className="text-2xl font-black text-gray-900">{block.headingText || 'Heading 1 Preview'}</p>}
+          {(!block.headingLevel || block.headingLevel === 2) && <p className="text-xl font-bold text-gray-800">{block.headingText || 'Heading 2 Preview'}</p>}
+          {block.headingLevel === 3 && <p className="text-lg font-semibold text-gray-700">{block.headingText || 'Heading 3 Preview'}</p>}
         </div>
       </div>
     );
@@ -85,85 +79,145 @@ function BlockEditor({ block, onChange }: { block: Block; onChange: (b: Block) =
       <RichTextEditor
         value={block.textContent ?? ''}
         onChange={html => u({ textContent: html })}
-        placeholder="Enter your content here. Use the toolbar for bold, italic, headings, lists, links and more…"
-        minHeight={150}
+        placeholder="Write your lesson content here. Use the toolbar for headings, bold, lists, links, and more…"
+        minHeight={200}
       />
     );
 
     case 'Image': return (
-      <div className="space-y-3">
+      <div className="space-y-4">
         <FileUpload type="image" folder="lessons/images" label="Upload Image"
-          onUploaded={(url) => u({ imageUrl: url })}
-          currentUrl={block.imageUrl} />
+          onUploaded={url => u({ imageUrl: url })} currentUrl={block.imageUrl} />
         {block.imageUrl && (
-          <>
-            <input className="input" placeholder="Caption (optional)" value={block.imageCaption ?? ''} onChange={e => u({ imageCaption: e.target.value })} />
-            <div className="flex gap-2">
-              <label className="label w-20">Align</label>
-              {['left','center','full'].map(a => (
-                <button key={a} onClick={() => u({ imageAlign: a })}
-                  className={clsx('px-3 py-1.5 rounded-lg text-xs font-semibold border-2 transition-all capitalize',
-                    block.imageAlign === a ? 'border-[var(--org-primary)] text-[var(--org-primary)] bg-[var(--org-primary)]/10' : 'border-gray-200')}>
+          <div className="space-y-3 p-4 bg-gray-50 rounded-xl border border-gray-200">
+            <input className="input text-sm" placeholder="Image caption (optional)"
+              value={block.imageCaption ?? ''} onChange={e => u({ imageCaption: e.target.value })} />
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-gray-500">Alignment:</span>
+              {(['left','center','full'] as const).map(a => (
+                <button key={a} type="button" onClick={() => u({ imageAlign: a })}
+                  className={clsx('px-3 py-1.5 rounded-lg text-xs font-bold border-2 capitalize transition-all',
+                    block.imageAlign === a ? 'border-[var(--org-primary)] text-[var(--org-primary)] bg-[var(--org-primary)]/10' : 'border-gray-200 text-gray-500 hover:border-gray-300')}>
                   {a}
                 </button>
               ))}
             </div>
-          </>
+            <img src={block.imageUrl} alt={block.imageCaption ?? ''} className="max-h-48 rounded-xl object-contain border border-gray-200 bg-white" />
+          </div>
         )}
       </div>
     );
 
     case 'Video': return (
-      <div className="space-y-3">
-        <FileUpload type="video" folder="lessons/videos" label="Upload Video"
-          onUploaded={(url) => u({ videoUrl: url })}
-          currentUrl={block.videoUrl} />
+      <div className="space-y-4">
+        {/* Mode toggle */}
+        <div className="grid grid-cols-2 gap-2">
+          {(['upload','url'] as const).map(mode => (
+            <button key={mode} type="button" onClick={() => u({ _videoMode: mode })}
+              className={clsx('py-2.5 rounded-xl text-sm font-bold border-2 transition-all',
+                (block._videoMode ?? 'upload') === mode
+                  ? 'border-[var(--org-primary)] bg-[var(--org-primary)]/10 text-[var(--org-primary)]'
+                  : 'border-gray-200 text-gray-500 hover:border-gray-300')}>
+              {mode === 'upload' ? '⬆️  Upload Video File' : '🔗  Paste URL or YouTube Link'}
+            </button>
+          ))}
+        </div>
+
+        {(block._videoMode ?? 'upload') === 'url' ? (
+          <div className="space-y-2">
+            <label className="label">YouTube URL or direct video URL</label>
+            <input className="input text-sm" type="url"
+              placeholder="https://www.youtube.com/watch?v=... or https://cdn.example.com/video.mp4"
+              value={block.videoUrl ?? ''} onChange={e => u({ videoUrl: e.target.value })} />
+            {(block.videoUrl ?? '').match(/youtube|youtu\.be/) && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
+                ▶️ YouTube video detected — will embed automatically in the lesson player.
+              </div>
+            )}
+            {(block.videoUrl ?? '') && !(block.videoUrl ?? '').match(/youtube|youtu\.be/) && (block.videoUrl ?? '').startsWith('http') && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-700 font-medium">
+                🎬 Direct video URL — will use native player with seek/speed controls.
+              </div>
+            )}
+          </div>
+        ) : (
+          <FileUpload type="video" folder="lessons/videos"
+            label="Upload Video (MP4, MOV, WebM — up to 2 GB, with upload progress)"
+            onUploaded={url => u({ videoUrl: url, _videoMode: 'upload' })} currentUrl={block.videoUrl} />
+        )}
+
         {block.videoUrl && (
-          <>
-            <input className="input" placeholder="Video title" value={block.videoTitle ?? ''} onChange={e => u({ videoTitle: e.target.value })} />
-            <div className="flex gap-3">
-              <div className="flex-1"><label className="label">Duration (seconds)</label>
-                <input className="input" type="number" value={block.videoDurationSecs ?? 0} onChange={e => u({ videoDurationSecs: Number(e.target.value) })} /></div>
+          <div className="space-y-3 p-4 bg-gray-50 rounded-xl border border-gray-200">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label text-xs">Video title</label>
+                <input className="input text-sm" placeholder="e.g. Introduction to React Hooks"
+                  value={block.videoTitle ?? ''} onChange={e => u({ videoTitle: e.target.value })} />
+              </div>
+              <div>
+                <label className="label text-xs">Duration in seconds</label>
+                <div className="flex gap-2 items-center">
+                  <input className="input text-sm" type="number" min={0} placeholder="e.g. 900"
+                    value={block.videoDurationSecs ?? ''} onChange={e => u({ videoDurationSecs: +e.target.value })} />
+                  <span className="text-xs text-gray-400 whitespace-nowrap">{fmtSecs(block.videoDurationSecs ?? 0)}</span>
+                </div>
+              </div>
             </div>
-            <div className="bg-gray-900 rounded-xl overflow-hidden aspect-video flex items-center justify-center">
-              <video src={block.videoUrl} controls className="w-full h-full" preload="metadata" />
-            </div>
-          </>
+            {/* Preview */}
+            {(block.videoUrl.includes('youtube') || block.videoUrl.includes('youtu.be')) ? (
+              <div className="rounded-xl overflow-hidden bg-black" style={{aspectRatio:'16/9'}}>
+                {(() => {
+                  const id = block.videoUrl.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)?.[1];
+                  return id
+                    ? <iframe src={`https://www.youtube.com/embed/${id}`} className="w-full h-full" allowFullScreen title="preview" />
+                    : <p className="text-white text-xs p-4">Could not parse YouTube URL</p>;
+                })()}
+              </div>
+            ) : (
+              <div className="rounded-xl overflow-hidden bg-gray-900" style={{aspectRatio:'16/9'}}>
+                <video src={block.videoUrl} controls preload="metadata" className="w-full h-full" />
+              </div>
+            )}
+          </div>
         )}
       </div>
     );
 
     case 'Audio': return (
-      <div className="space-y-3">
-        <FileUpload type="file" folder="lessons/audio" label="Upload Audio (MP3, WAV, M4A)"
+      <div className="space-y-4">
+        <FileUpload type="file" folder="lessons/audio" label="Upload Audio File (MP3, WAV, M4A, OGG)"
           accept="audio/mpeg,audio/wav,audio/mp4,audio/ogg,.mp3,.wav,.m4a,.ogg"
-          onUploaded={(url) => u({ audioUrl: url })}
-          currentUrl={block.audioUrl} />
+          onUploaded={url => u({ audioUrl: url })} currentUrl={block.audioUrl} />
         {block.audioUrl && (
-          <>
-            <input className="input" placeholder="Audio title" value={block.audioTitle ?? ''} onChange={e => u({ audioTitle: e.target.value })} />
-            <div className="bg-gray-50 rounded-xl p-4">
-              <audio src={block.audioUrl} controls className="w-full" />
+          <div className="space-y-3 p-4 bg-amber-50 rounded-xl border border-amber-200">
+            <input className="input text-sm bg-white" placeholder="Audio title"
+              value={block.audioTitle ?? ''} onChange={e => u({ audioTitle: e.target.value })} />
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-400 flex items-center justify-center flex-shrink-0">
+                <Music className="w-5 h-5 text-white" />
+              </div>
+              <audio src={block.audioUrl} controls className="flex-1" />
             </div>
-          </>
+          </div>
         )}
       </div>
     );
 
     case 'PDF': return (
-      <div className="space-y-3">
-        <FileUpload type="file" folder="lessons/pdfs" label="Upload PDF"
+      <div className="space-y-4">
+        <FileUpload type="file" folder="lessons/pdfs" label="Upload PDF Document"
           accept=".pdf,application/pdf"
-          onUploaded={(url, key) => u({ fileUrl: url, fileName: key.split('/').pop() })}
-          currentUrl={block.fileUrl} />
+          onUploaded={(url, key) => u({ fileUrl: url, fileName: key.split('/').pop() })} currentUrl={block.fileUrl} />
         {block.fileUrl && (
-          <>
-            <input className="input" placeholder="PDF title / filename" value={block.fileName ?? ''} onChange={e => u({ fileName: e.target.value })} />
-            <div className="flex items-center gap-3">
-              <input type="checkbox" id={`embed-${block.order}`} checked={block.embedPdf ?? true} onChange={e => u({ embedPdf: e.target.checked })} />
-              <label htmlFor={`embed-${block.order}`} className="text-sm text-gray-700 cursor-pointer">Embed PDF viewer in page</label>
-            </div>
-          </>
+          <div className="space-y-3 p-4 bg-red-50 rounded-xl border border-red-200">
+            <input className="input text-sm bg-white" placeholder="PDF display title"
+              value={block.fileName ?? ''} onChange={e => u({ fileName: e.target.value })} />
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 font-medium">
+              <input type="checkbox" className="rounded" checked={block.embedPdf ?? true}
+                onChange={e => u({ embedPdf: e.target.checked })} />
+              Show inline PDF viewer for students (they can also download)
+            </label>
+          </div>
         )}
       </div>
     );
@@ -171,310 +225,400 @@ function BlockEditor({ block, onChange }: { block: Block; onChange: (b: Block) =
     case 'File': return (
       <div className="space-y-3">
         <FileUpload type="file" folder="lessons/files" label="Upload Downloadable File"
-          onUploaded={(url, key) => u({ fileUrl: url, fileName: key.split('/').pop() })}
-          currentUrl={block.fileUrl} />
+          onUploaded={(url, key) => u({ fileUrl: url, fileName: key.split('/').pop() })} currentUrl={block.fileUrl} />
         {block.fileUrl && (
-          <input className="input" placeholder="Display name for the file" value={block.fileName ?? ''} onChange={e => u({ fileName: e.target.value })} />
+          <input className="input text-sm" placeholder="File display name (e.g. Exercise 1 — Starter Code.zip)"
+            value={block.fileName ?? ''} onChange={e => u({ fileName: e.target.value })} />
         )}
       </div>
     );
 
     case 'Callout': return (
       <div className="space-y-3">
-        <div className="flex gap-2">
-          {['info','warning','success','danger'].map(style => (
-            <button key={style} onClick={() => u({ calloutStyle: style })}
-              className={clsx('px-3 py-1.5 rounded-lg text-xs font-bold border-2 capitalize transition-all',
-                block.calloutStyle === style ? 'border-transparent text-white' : 'border-gray-200 text-gray-600',
-                style === 'info' && block.calloutStyle === style && 'bg-blue-500',
-                style === 'warning' && block.calloutStyle === style && 'bg-amber-500',
-                style === 'success' && block.calloutStyle === style && 'bg-green-500',
-                style === 'danger' && block.calloutStyle === style && 'bg-red-500',
-              )}>
-              {style === 'info' ? 'ℹ️' : style === 'warning' ? '⚠️' : style === 'success' ? '✅' : '❌'} {style}
+        <div className="flex gap-2 flex-wrap">
+          {[
+            { key:'info',    emoji:'ℹ️', label:'Info',    bg:'bg-blue-500'  },
+            { key:'warning', emoji:'⚠️', label:'Warning', bg:'bg-amber-500' },
+            { key:'success', emoji:'✅', label:'Success', bg:'bg-green-500' },
+            { key:'danger',  emoji:'❌', label:'Danger',  bg:'bg-red-500'   },
+          ].map(({ key, emoji, label, bg }) => (
+            <button key={key} type="button" onClick={() => u({ calloutStyle: key })}
+              className={clsx('flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold border-2 transition-all',
+                block.calloutStyle === key ? `${bg} text-white border-transparent shadow-sm` : 'border-gray-200 text-gray-600 hover:border-gray-300')}>
+              {emoji} {label}
             </button>
           ))}
         </div>
-        <textarea className="input w-full min-h-[80px]" placeholder="Callout message…"
+        <textarea className="input w-full min-h-[100px] text-sm resize-y"
+          placeholder="Enter your callout message here…"
           value={block.calloutText ?? ''} onChange={e => u({ calloutText: e.target.value })} />
-        <CalloutPreview style={block.calloutStyle ?? 'info'} text={block.calloutText ?? 'Callout preview'} />
+        {block.calloutText && (
+          <div className={clsx('flex items-start gap-3 p-4 rounded-xl border-2',
+            block.calloutStyle === 'warning' ? 'bg-amber-50 border-amber-200' :
+            block.calloutStyle === 'success' ? 'bg-green-50 border-green-200' :
+            block.calloutStyle === 'danger'  ? 'bg-red-50 border-red-200' :
+            'bg-blue-50 border-blue-200')}>
+            <span className="text-xl flex-shrink-0">{{ info:'ℹ️', warning:'⚠️', success:'✅', danger:'❌' }[block.calloutStyle ?? 'info'] ?? 'ℹ️'}</span>
+            <p className="text-sm text-gray-700">{block.calloutText}</p>
+          </div>
+        )}
       </div>
     );
 
     case 'Code': return (
-      <div className="space-y-2">
-        <select className="input w-40" value={block.codeLanguage ?? 'javascript'}
-          onChange={e => u({ codeLanguage: e.target.value })}>
-          {['javascript','typescript','python','csharp','java','sql','html','css','bash','json','xml'].map(l => (
-            <option key={l} value={l}>{l}</option>
-          ))}
-        </select>
-        <textarea className="input w-full min-h-[120px] font-mono text-sm bg-gray-900 text-green-400"
-          placeholder="// Enter code here…"
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <select className="input w-44 text-sm" value={block.codeLanguage ?? 'javascript'}
+            onChange={e => u({ codeLanguage: e.target.value })}>
+            {['javascript','typescript','python','csharp','java','sql','html','css','bash','json','xml','go','rust','plaintext'].map(l =>
+              <option key={l} value={l}>{l}</option>)}
+          </select>
+          <span className="text-xs text-gray-400">Select language for syntax highlighting</span>
+        </div>
+        <textarea
+          className="input w-full font-mono text-sm bg-gray-950 text-green-400 border-gray-700 resize-y placeholder-gray-600"
+          style={{ minHeight: '180px' }}
+          placeholder={`// Enter your ${block.codeLanguage ?? 'code'} here…`}
           value={block.codeContent ?? ''} onChange={e => u({ codeContent: e.target.value })} />
       </div>
     );
 
     case 'Divider': return (
-      <div className="py-3"><hr className="border-gray-300 border-dashed" /></div>
+      <div className="py-4">
+        <div className="flex items-center gap-4">
+          <hr className="flex-1 border-dashed border-gray-300" />
+          <span className="text-xs text-gray-400 font-medium">SECTION BREAK</span>
+          <hr className="flex-1 border-dashed border-gray-300" />
+        </div>
+      </div>
     );
 
     default: return null;
   }
 }
 
-function CalloutPreview({ style, text }: { style: string; text: string }) {
-  const cfg: Record<string, { bg: string; border: string; icon: string }> = {
-    info:    { bg: 'bg-blue-50',   border: 'border-blue-300',  icon: 'ℹ️' },
-    warning: { bg: 'bg-amber-50',  border: 'border-amber-300', icon: '⚠️' },
-    success: { bg: 'bg-green-50',  border: 'border-green-300', icon: '✅' },
-    danger:  { bg: 'bg-red-50',    border: 'border-red-300',   icon: '❌' },
-  };
-  const c = cfg[style] ?? cfg.info;
-  return (
-    <div className={`flex items-start gap-3 p-4 rounded-xl border-2 ${c.bg} ${c.border}`}>
-      <span className="text-lg flex-shrink-0">{c.icon}</span>
-      <p className="text-sm text-gray-700">{text}</p>
-    </div>
-  );
-}
-
-// ─── MAIN PAGE ─────────────────────────────────────────────────
+// ─── MAIN PAGE ────────────────────────────────────────────────
 export default function LessonEditorPage() {
   const { courseId, lessonId } = useParams<{ courseId: string; lessonId?: string }>();
+  const [searchParams] = useSearchParams();
+  const moduleId = searchParams.get('moduleId');
   const navigate = useNavigate();
-  const qc = useQueryClient();
   const isNew = !lessonId || lessonId === 'new';
 
+  const [meta, setMeta] = useState({
+    title: '', description: '', isPreview: false, isPublished: true, durationSecs: 0,
+  });
   const [blocks, setBlocks] = useState<Block[]>([]);
-  const [showBlockMenu, setShowBlockMenu] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const [meta, setMeta] = useState({
-    title: '', description: '', isPreview: false, isPublished: true,
-    displayOrder: 0, durationSecs: 0, moduleId: 0, type: 'Mixed'
-  });
+  const token = () => localStorage.getItem('lms_token') ?? '';
+  const authHeaders = () => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` });
 
-  // Fetch existing lesson
-  const { data: lesson } = useQuery({
-    queryKey: ['lesson', lessonId],
-    queryFn: () => api.get(`/lessons/${lessonId}`).then((r: any) => r.data),
-    enabled: !isNew && !!lessonId,
-  });
-
+  // Load existing lesson
   useEffect(() => {
-    if (lesson) {
-      setMeta({
-        title: lesson.title, description: lesson.description ?? '',
-        isPreview: lesson.isPreview, isPublished: lesson.isPublished,
-        displayOrder: lesson.displayOrder, durationSecs: lesson.durationSecs,
-        moduleId: lesson.moduleId, type: lesson.type,
-      });
-      setBlocks(lesson.contentBlocks ?? []);
-    }
-  }, [lesson]);
+    if (isNew) return;
+    setLoading(true);
+    fetch(`/api/lessons/${lessonId}`, { headers: { Authorization: `Bearer ${token()}` } })
+      .then(r => r.json())
+      .then(data => {
+        setMeta({ title: data.title, description: data.description ?? '', isPreview: data.isPreview, isPublished: data.isPublished, durationSecs: data.durationSecs });
+        setBlocks((data.contentBlocks ?? []).sort((a: Block, b: Block) => a.order - b.order));
+      })
+      .catch(() => toast.error('Failed to load lesson'))
+      .finally(() => setLoading(false));
+  }, [lessonId]);
 
-  // Fetch modules for this course
-  const { data: modulesData } = useQuery({
-    queryKey: ['modules', courseId],
-    queryFn: () => api.get(`/modules/course/${courseId}`).then((r: any) => r.data),
-    enabled: !!courseId,
-  });
-  const modules: any[] = modulesData ?? [];
-
-  const saveMut = useMutation({
-    mutationFn: async () => {
-      const reindexed = blocks.map((b, i) => ({ ...b, order: i }));
+  const save = async () => {
+    if (!meta.title.trim()) { toast.error('Lesson title is required'); return; }
+    setSaving(true);
+    try {
+      let id: number;
       if (isNew) {
-        const { data: created } = await api.post('/lessons', { ...meta, courseId: Number(courseId) });
-        await api.put(`/lessons/${created.id}/blocks`, { blocks: reindexed });
-        return created;
+        const res = await fetch('/api/lessons', {
+          method: 'POST', headers: authHeaders(),
+          body: JSON.stringify({ ...meta, type: 'Mixed', displayOrder: 0, moduleId: Number(moduleId), videoUrl: null, fileUrl: null, content: null })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        id = data.id;
       } else {
-        await api.put(`/lessons/${lessonId}`, meta);
-        await api.put(`/lessons/${lessonId}/blocks`, { blocks: reindexed });
-        return { id: lessonId };
+        const res = await fetch(`/api/lessons/${lessonId}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(meta) });
+        if (!res.ok) throw new Error(await res.text());
+        id = Number(lessonId);
       }
-    },
-    onSuccess: (data) => {
+      const reindexed = blocks.map((b, i) => ({ ...b, order: i }));
+      const bRes = await fetch(`/api/lessons/${id}/blocks`, {
+        method: 'PUT', headers: authHeaders(),
+        body: JSON.stringify({ blocks: reindexed })
+      });
+      if (!bRes.ok) throw new Error(await bRes.text());
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-      qc.invalidateQueries({ queryKey: ['lesson'] });
-      toast.success('Lesson saved!');
-      if (isNew) navigate(`/dashboard/courses/${courseId}/lesson/${data.id}/edit`, { replace: true });
-    },
-    onError: () => toast.error('Failed to save'),
-  });
+      setTimeout(() => setSaved(false), 3000);
+      toast.success(isNew ? 'Lesson created!' : 'Lesson saved!');
+      if (isNew) {
+        navigate(`/dashboard/courses/${courseId}/lesson/${id}/edit`, { replace: true });
+      }
+    } catch (e: any) {
+      toast.error(e.message ?? 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const addBlock = (type: BlockType) => {
-    setBlocks(prev => [...prev, { ...defaultBlock(type), order: prev.length }]);
-    setShowBlockMenu(false);
+    const defaults: Record<BlockType, Partial<Block>> = {
+      Heading: { headingText: '', headingLevel: 2 },
+      Text:    { textContent: '' },
+      Image:   { imageAlign: 'center' },
+      Video:   { _videoMode: 'upload', videoTitle: '' },
+      Audio:   { audioTitle: '' },
+      PDF:     { embedPdf: true },
+      File:    {},
+      Callout: { calloutStyle: 'info', calloutText: '' },
+      Code:    { codeLanguage: 'javascript', codeContent: '' },
+      Divider: {},
+    };
+    setBlocks(p => [...p, { type, order: p.length, ...defaults[type] }]);
+    // Scroll to bottom after adding
+    setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 100);
   };
 
-  const removeBlock = (idx: number) =>
-    setBlocks(prev => prev.filter((_, i) => i !== idx).map((b, i) => ({ ...b, order: i })));
-
-  const moveBlock = (idx: number, dir: -1 | 1) => {
-    const next = [...blocks];
-    const target = idx + dir;
-    if (target < 0 || target >= next.length) return;
-    [next[idx], next[target]] = [next[target], next[idx]];
-    setBlocks(next.map((b, i) => ({ ...b, order: i })));
+  const removeBlock = (i: number) => setBlocks(p => p.filter((_,j) => j!==i).map((b,j) => ({...b,order:j})));
+  const moveBlock = (i: number, dir: -1|1) => {
+    const a = [...blocks], t = i+dir;
+    if (t < 0 || t >= a.length) return;
+    [a[i], a[t]] = [a[t], a[i]];
+    setBlocks(a.map((b,j) => ({...b,order:j})));
   };
 
-  const updateBlock = (idx: number, b: Block) =>
-    setBlocks(prev => prev.map((x, i) => i === idx ? { ...b, order: i } : x));
+  const totalDuration = blocks
+    .filter(b => b.type === 'Video')
+    .reduce((sum, b) => sum + (b.videoDurationSecs ?? 0), 0);
 
-  const typeInfo = (t: BlockType) => BLOCK_TYPES.find(bt => bt.type === t)!;
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="text-center space-y-3">
+        <div className="w-12 h-12 rounded-full border-4 border-[var(--org-primary)] border-t-transparent animate-spin mx-auto" />
+        <p className="text-gray-400 text-sm">Loading lesson…</p>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="max-w-4xl space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <button className="btn-ghost" onClick={() => navigate(-1)}><ArrowLeft className="w-4 h-4" /></button>
-          <div>
-            <h1 className="text-xl font-black text-gray-900">
-              {isNew ? 'New Lesson' : `Edit: ${meta.title}`}
-            </h1>
-            <p className="text-xs text-gray-400 mt-0.5">{blocks.length} content blocks</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-xl border border-gray-200">
-            <input type="checkbox" id="published" checked={meta.isPublished}
-              onChange={e => setMeta(m => ({ ...m, isPublished: e.target.checked }))} />
-            <label htmlFor="published" className="text-xs font-semibold text-gray-600 cursor-pointer flex items-center gap-1">
-              {meta.isPublished ? <Eye className="w-3.5 h-3.5 text-green-500" /> : <EyeOff className="w-3.5 h-3.5 text-gray-400" />}
-              {meta.isPublished ? 'Published' : 'Draft'}
-            </label>
-          </div>
-          <button className="btn-primary flex items-center gap-2" onClick={() => saveMut.mutate()}
-            disabled={!meta.title || !meta.moduleId || saveMut.isPending}>
-            {saved ? <CheckCircle2 className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-            {saveMut.isPending ? 'Saving…' : saved ? 'Saved!' : 'Save Lesson'}
-          </button>
-        </div>
-      </div>
-
-      {/* Lesson metadata */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
-        <h2 className="font-bold text-gray-700 text-sm uppercase tracking-wide flex items-center gap-2">
-          <Settings className="w-4 h-4" /> Lesson Settings
-        </h2>
-        <div><label className="label">Lesson Title *</label>
-          <input className="input text-base font-semibold" placeholder="e.g. Introduction to React Hooks"
-            value={meta.title} onChange={e => setMeta(m => ({ ...m, title: e.target.value }))} /></div>
-        <div>
-          <RichTextEditor
-            label="Description"
-            value={meta.description}
-            onChange={val => setMeta(m => ({ ...m, description: val }))}
-            placeholder="Brief description of what students will learn in this lesson…"
-            minHeight={100}
-          />
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div><label className="label">Module *</label>
-            <select className="input" value={meta.moduleId} onChange={e => setMeta(m => ({ ...m, moduleId: Number(e.target.value) }))}>
-              <option value={0}>Select module</option>
-              {modules.map((mod: any) => <option key={mod.id} value={mod.id}>{mod.title}</option>)}
-            </select></div>
-          <div><label className="label">Order</label>
-            <input className="input" type="number" value={meta.displayOrder}
-              onChange={e => setMeta(m => ({ ...m, displayOrder: Number(e.target.value) }))} /></div>
-          <div><label className="label">Duration (secs)</label>
-            <input className="input" type="number" value={meta.durationSecs}
-              onChange={e => setMeta(m => ({ ...m, durationSecs: Number(e.target.value) }))} /></div>
-          <div className="flex flex-col justify-end">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={meta.isPreview}
-                onChange={e => setMeta(m => ({ ...m, isPreview: e.target.checked }))} />
-              <span className="text-sm font-medium text-gray-700">Free Preview</span>
-            </label>
-          </div>
-        </div>
-      </div>
-
-      {/* Content blocks */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="font-bold text-gray-700 text-sm uppercase tracking-wide">Content Blocks</h2>
-          <div className="relative">
-            <button className="btn-primary text-sm" onClick={() => setShowBlockMenu(!showBlockMenu)}>
-              <Plus className="w-4 h-4" /> Add Block
+    <div className="min-h-screen bg-gray-50">
+      {/* ─── Sticky top bar ────────────────────────────────── */}
+      <div className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm">
+        <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <button className="btn-ghost flex-shrink-0" onClick={() => navigate(`/dashboard/courses/${courseId}/edit`)}>
+              <ArrowLeft className="w-4 h-4" />
             </button>
-            {showBlockMenu && (
-              <div className="absolute right-0 top-10 z-20 bg-white border border-gray-200 rounded-2xl shadow-2xl p-2 w-64">
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wide px-2 py-1 mb-1">Choose block type</p>
-                <div className="grid grid-cols-2 gap-1">
-                  {BLOCK_TYPES.map(bt => (
-                    <button key={bt.type} onClick={() => addBlock(bt.type)}
-                      className={clsx('flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all hover:scale-[1.02]', bt.color)}>
-                      {bt.icon} {bt.label}
-                    </button>
-                  ))}
+            <div className="min-w-0">
+              <h1 className="font-black text-gray-900 truncate text-base">
+                {meta.title || (isNew ? 'New Lesson' : 'Edit Lesson')}
+              </h1>
+              <p className="text-xs text-gray-400">{blocks.length} block{blocks.length !== 1 ? 's' : ''}{totalDuration > 0 ? ` · ${fmtSecs(totalDuration)}` : ''}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Published toggle */}
+            <button type="button" onClick={() => setMeta(m => ({...m, isPublished: !m.isPublished}))}
+              className={clsx('flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border-2 transition-all',
+                meta.isPublished ? 'border-green-300 bg-green-50 text-green-700' : 'border-gray-200 bg-gray-50 text-gray-500')}>
+              {meta.isPublished ? <><Globe className="w-3 h-3"/>Published</> : <><Lock className="w-3 h-3"/>Draft</>}
+            </button>
+            {/* Free preview toggle */}
+            <button type="button" onClick={() => setMeta(m => ({...m, isPreview: !m.isPreview}))}
+              className={clsx('flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border-2 transition-all',
+                meta.isPreview ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-gray-200 bg-gray-50 text-gray-500')}>
+              {meta.isPreview ? <><Eye className="w-3 h-3"/>Free Preview</> : <><EyeOff className="w-3 h-3"/>Enrolled Only</>}
+            </button>
+            {/* Save button */}
+            <button className={clsx('flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white shadow-sm transition-all',
+              saved ? 'bg-green-500' : 'bg-[var(--org-primary)] hover:opacity-90')}
+              onClick={save} disabled={saving}>
+              {saved ? <CheckCircle2 className="w-4 h-4"/> : <Save className="w-4 h-4"/>}
+              {saving ? 'Saving…' : saved ? 'Saved!' : 'Save Lesson'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Main two-column layout ─────────────────────────── */}
+      <div className="max-w-6xl mx-auto px-6 py-8 grid grid-cols-1 xl:grid-cols-4 gap-6">
+
+        {/* ── Left: Lesson meta + blocks ────────────────────── */}
+        <div className="xl:col-span-3 space-y-5">
+
+          {/* Lesson info card */}
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-2 h-2 rounded-full bg-[var(--org-primary)]" />
+              <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Lesson Details</h2>
+            </div>
+            <div>
+              <label className="label">Lesson Title *</label>
+              <input className="input text-base font-semibold" placeholder="e.g. Introduction to React Hooks"
+                value={meta.title} onChange={e => setMeta(m => ({...m, title: e.target.value}))} />
+            </div>
+            <div>
+              <RichTextEditor
+                label="Description"
+                value={meta.description}
+                onChange={val => setMeta(m => ({...m, description: val}))}
+                placeholder="Brief overview of what students will learn in this lesson…"
+                minHeight={100}
+              />
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-gray-400" />
+                <label className="text-sm font-medium text-gray-600">Duration (seconds)</label>
+              </div>
+              <input className="input w-32 text-sm" type="number" min={0}
+                value={meta.durationSecs || ''} placeholder="e.g. 900"
+                onChange={e => setMeta(m => ({...m, durationSecs: +e.target.value}))} />
+              {meta.durationSecs > 0 && <span className="text-sm text-gray-400">≈ {fmtSecs(meta.durationSecs)}</span>}
+            </div>
+          </div>
+
+          {/* Content blocks */}
+          {blocks.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-[var(--org-primary)]" />
+                <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Content Blocks</h2>
+                <span className="text-xs text-gray-400">({blocks.length})</span>
+              </div>
+
+              {blocks.map((block, idx) => {
+                const info = BLOCK_PALETTE.find(b => b.type === block.type)!;
+                return (
+                  <div key={`${block.type}-${idx}`}
+                    className="bg-white rounded-2xl border-2 border-gray-200 hover:border-gray-300 shadow-sm transition-all overflow-hidden">
+                    {/* Block toolbar */}
+                    <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-200">
+                      <div className="flex items-center gap-2">
+                        <GripVertical className="w-4 h-4 text-gray-300 cursor-grab flex-shrink-0" />
+                        <span className={clsx('flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full', info.bg, info.color)}>
+                          {info.icon} {info.label}
+                        </span>
+                        <span className="text-xs text-gray-400 font-medium">Block {idx + 1}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => moveBlock(idx,-1)} disabled={idx===0}
+                          className="p-1.5 rounded-lg hover:bg-gray-200 disabled:opacity-20 transition-colors" title="Move up">
+                          <ChevronUp className="w-4 h-4 text-gray-600" />
+                        </button>
+                        <button onClick={() => moveBlock(idx,1)} disabled={idx===blocks.length-1}
+                          className="p-1.5 rounded-lg hover:bg-gray-200 disabled:opacity-20 transition-colors" title="Move down">
+                          <ChevronDown className="w-4 h-4 text-gray-600" />
+                        </button>
+                        <div className="w-px h-5 bg-gray-200 mx-1" />
+                        <button onClick={() => removeBlock(idx)}
+                          className="p-1.5 rounded-lg hover:bg-red-100 text-gray-400 hover:text-red-500 transition-colors" title="Remove block">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                    {/* Block content */}
+                    <div className="p-5">
+                      <BlockEditor
+                        block={block}
+                        onChange={b => setBlocks(p => p.map((x,i) => i===idx ? {...b, order:i} : x))}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Empty state */}
+          {blocks.length === 0 && (
+            <div className="bg-white rounded-2xl border-2 border-dashed border-gray-200 p-16 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
+                <BookOpen className="w-8 h-8 text-gray-300" />
+              </div>
+              <p className="font-bold text-gray-500 text-lg">No content yet</p>
+              <p className="text-sm text-gray-400 mt-2 mb-6">Add content blocks from the panel on the right →</p>
+            </div>
+          )}
+
+          {/* Bottom save */}
+          <div className="flex justify-end pb-8">
+            <button className="btn-primary px-8 py-3 text-base font-bold" onClick={save} disabled={saving}>
+              <Save className="w-4 h-4" />
+              {saving ? 'Saving…' : 'Save Lesson'}
+            </button>
+          </div>
+        </div>
+
+        {/* ── Right: Block palette (sticky) ──────────────────── */}
+        <div className="xl:col-span-1">
+          <div className="sticky top-24 space-y-4">
+            {/* Add blocks panel */}
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+                <div className="flex items-center gap-2">
+                  <Plus className="w-4 h-4 text-[var(--org-primary)]" />
+                  <h3 className="text-sm font-bold text-gray-700">Add Content Block</h3>
+                </div>
+                <p className="text-xs text-gray-400 mt-0.5">Click any type to add it</p>
+              </div>
+              <div className="p-3 space-y-1">
+                {BLOCK_PALETTE.map(bt => (
+                  <button key={bt.type} type="button" onClick={() => addBlock(bt.type)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 transition-colors group text-left">
+                    <span className={clsx('w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-110', bt.bg, bt.color)}>
+                      {bt.icon}
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-700">{bt.label}</p>
+                      <p className="text-xs text-gray-400">{bt.desc}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Block count summary */}
+            {blocks.length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Content Summary</h3>
+                <div className="space-y-1.5">
+                  {BLOCK_PALETTE.filter(bt => blocks.some(b => b.type === bt.type)).map(bt => {
+                    const count = blocks.filter(b => b.type === bt.type).length;
+                    return (
+                      <div key={bt.type} className="flex items-center justify-between text-xs">
+                        <span className={clsx('flex items-center gap-1.5 font-medium', bt.color)}>{bt.icon} {bt.label}</span>
+                        <span className="bg-gray-100 text-gray-600 font-bold px-2 py-0.5 rounded-full">{count}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs font-bold text-gray-700">
+                  <span>Total blocks</span>
+                  <span className="text-[var(--org-primary)]">{blocks.length}</span>
                 </div>
               </div>
             )}
+
+            {/* Quick tips */}
+            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4">
+              <h3 className="text-xs font-bold text-blue-700 uppercase tracking-wider mb-2">Tips</h3>
+              <ul className="space-y-1.5 text-xs text-blue-600">
+                <li>• Use <strong>Heading</strong> to structure sections</li>
+                <li>• <strong>Text</strong> blocks support bold, italic, lists and links</li>
+                <li>• <strong>Video</strong> supports YouTube or uploaded files</li>
+                <li>• <strong>Callout</strong> highlights important notes</li>
+                <li>• Use <strong>↑↓</strong> arrows to reorder blocks</li>
+              </ul>
+            </div>
           </div>
         </div>
-
-        {blocks.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
-            <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
-              <Plus className="w-8 h-8 text-gray-300" />
-            </div>
-            <p className="font-semibold text-gray-500">No content blocks yet</p>
-            <p className="text-sm mt-1">Click "Add Block" to start building your lesson</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {blocks.map((block, idx) => {
-              const ti = typeInfo(block.type);
-              return (
-                <div key={idx} className="border border-gray-200 rounded-2xl overflow-hidden hover:border-gray-300 transition-colors">
-                  {/* Block header */}
-                  <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                    <div className="flex items-center gap-2">
-                      <GripVertical className="w-4 h-4 text-gray-300" />
-                      <span className={clsx('flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full', ti.color)}>
-                        {ti.icon} {ti.label}
-                      </span>
-                      <span className="text-xs text-gray-400">#{idx + 1}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => moveBlock(idx, -1)} disabled={idx === 0}
-                        className="p-1.5 rounded-lg hover:bg-gray-200 disabled:opacity-30 transition-colors">
-                        <ChevronUp className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => moveBlock(idx, 1)} disabled={idx === blocks.length - 1}
-                        className="p-1.5 rounded-lg hover:bg-gray-200 disabled:opacity-30 transition-colors">
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => removeBlock(idx)}
-                        className="p-1.5 rounded-lg hover:bg-red-100 text-red-400 transition-colors">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                  {/* Block content editor */}
-                  <div className="p-4">
-                    <BlockEditor block={block} onChange={b => updateBlock(idx, b)} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {blocks.length > 0 && (
-          <div className="flex justify-end mt-5 pt-4 border-t border-gray-100">
-            <button className="btn-primary" onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>
-              <Save className="w-4 h-4" />
-              {saveMut.isPending ? 'Saving…' : 'Save All Blocks'}
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

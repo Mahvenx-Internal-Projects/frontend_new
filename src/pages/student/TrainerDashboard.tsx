@@ -17,8 +17,12 @@ export default function TrainerDashboard() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [searchParams] = useSearchParams();
-  const urlTab = (searchParams.get('tab') ?? 'overview') as 'overview'|'assignments'|'liveclasses'|'attendance'|'interviews';
-  const effectiveTab = urlTab;
+  const [activeTab, setActiveTab] = useState<'overview'|'assignments'|'liveclasses'|'attendance'|'interviews'>(
+    (searchParams.get('tab') as any) ?? 'overview'
+  );
+  // Sync tab from URL on navigation
+  const tabFromUrl = (searchParams.get('tab') ?? 'overview') as typeof activeTab;
+  const effectiveTab = tabFromUrl !== activeTab && searchParams.get('tab') ? tabFromUrl : activeTab;
   const [assignModal, setAssignModal] = useState(false);
   const [liveModal, setLiveModal] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<number | null>(null);
@@ -150,9 +154,9 @@ export default function TrainerDashboard() {
           ['attendance', '✅ Attendance'],
           ['interviews', '🎯 Interviews'],
         ].map(([t, label]) => (
-          <button key={t} onClick={() => {}}
+          <button key={t} onClick={() => setActiveTab(t as any)}
             className={clsx('px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap',
-              effectiveTab === t ? 'border-[var(--org-primary)] text-[var(--org-primary)]' : 'border-transparent text-gray-500 hover:text-gray-700')}>
+              activeTab === t ? 'border-[var(--org-primary)] text-[var(--org-primary)]' : 'border-transparent text-gray-500 hover:text-gray-700')}>
             {label}
           </button>
         ))}

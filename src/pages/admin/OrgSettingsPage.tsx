@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import FileUpload from '../../components/shared/FileUpload';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Save, Palette, Globe, Link2, Type, Eye, CheckCircle2 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -38,6 +39,7 @@ export default function OrgSettingsPage() {
     primaryColor: '#f97316', secondaryColor: '#ea580c', accentColor: '#fbbf24',
     themeFont: 'Plus Jakarta Sans', themeMode: 'light',
     logoUrl: '', bannerUrl: '',
+    signatureUrl: '', authorizedBy: '', authorizedTitle: 'Authorized Signatory',
     razorpayKeyId: '', razorpayKeySecret: '', currency: 'INR',
   });
 
@@ -55,6 +57,9 @@ export default function OrgSettingsPage() {
         themeMode:      orgData.themeMode || 'light',
         logoUrl:        orgData.logoUrl || '',
         bannerUrl:      orgData.bannerUrl || '',
+        signatureUrl:   (orgData as any).signatureUrl || '',
+        authorizedBy:   (orgData as any).authorizedBy || '',
+        authorizedTitle:(orgData as any).authorizedTitle || 'Authorized Signatory',
         razorpayKeyId:  orgData.razorpayKeyId || '',
         razorpayKeySecret: orgData.razorpayKeySecret || '',
         currency:       orgData.currency || 'INR',
@@ -69,6 +74,7 @@ export default function OrgSettingsPage() {
       name: form.name, tagline: form.tagline, website: form.website, portalUrl: form.portalUrl,
       primaryColor: form.primaryColor, secondaryColor: form.secondaryColor, accentColor: form.accentColor,
       themeFont: form.themeFont, logoUrl: form.logoUrl, bannerUrl: form.bannerUrl,
+      signatureUrl: form.signatureUrl, authorizedBy: form.authorizedBy, authorizedTitle: form.authorizedTitle,
       razorpayKeyId: form.razorpayKeyId,
     }),
     onSuccess: () => {

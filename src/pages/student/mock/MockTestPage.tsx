@@ -113,7 +113,7 @@ export default function MockTestPage() {
           <Award className="w-10 h-10 text-white" />
         </div>
         <h1 className="text-2xl font-black text-gray-900 mb-2">{test?.title}</h1>
-        {test?.description && <p className="text-gray-500 text-sm mb-5">{test.description}</p>}
+        {test?.description && <div className="text-gray-500 text-sm mb-5 prose prose-sm" dangerouslySetInnerHTML={{ __html: test.description }} />}
         <div className="grid grid-cols-3 gap-3 mb-6">
           {[
             { label: 'Questions', value: test?.totalQuestions ?? 0 },

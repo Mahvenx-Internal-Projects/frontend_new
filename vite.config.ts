@@ -7,9 +7,15 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'https://lms.worksupport360.com',   // HTTPS port .NET uses in dev
+        target: 'https://localhost:55296',
         changeOrigin: true,
-        secure: false,                       // ← ignore self-signed cert
+        secure: false,
+        configure: (proxy) => {
+          // Remove body size limit on proxy
+          proxy.on('proxyReq', (proxyReq) => {
+            proxyReq.removeHeader('content-length');
+          });
+        },
       }
     }
   }

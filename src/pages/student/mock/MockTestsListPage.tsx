@@ -97,7 +97,7 @@ export default function MockTestsListPage() {
                   </span>
                 </div>
                 <h3 className="font-black text-gray-900 text-sm leading-snug mb-2">{t.title}</h3>
-                {t.description && <p className="text-xs text-gray-500 line-clamp-2 mb-3">{t.description}</p>}
+                {t.description && <div className="text-xs text-gray-500 line-clamp-2 mb-3 prose prose-sm" dangerouslySetInnerHTML={{ __html: t.description }} />}
                 <div className="grid grid-cols-3 gap-2 text-center mb-4">
                   <div className="bg-gray-50 rounded-xl p-2">
                     <p className="font-black text-gray-900 text-sm">{t.totalQuestions}</p>

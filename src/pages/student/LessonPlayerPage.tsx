@@ -397,7 +397,7 @@ export default function LessonPlayerPage() {
                 )}
               </div>
               <h1 className="text-xl font-black text-gray-900 leading-tight">{lesson?.title}</h1>
-              {lesson?.description && <p className="text-sm text-gray-500 mt-1">{lesson.description}</p>}
+              {lesson?.description && <div className="text-sm text-gray-500 mt-1 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: lesson.description }} />}
             </div>
             <button className="lg:hidden btn-ghost flex-shrink-0" onClick={() => setSidebarOpen(!sidebarOpen)}>
               {sidebarOpen ? <X className="w-5 h-5"/> : <Menu className="w-5 h-5"/>}
@@ -480,7 +480,7 @@ export default function LessonPlayerPage() {
             className={clsx('flex items-center gap-2 px-4 py-3 rounded-2xl border-2 font-semibold text-sm transition-all flex-1',
               prev ? 'border-gray-200 hover:border-gray-300 text-gray-700 hover:bg-gray-50' : 'border-gray-100 text-gray-300 cursor-not-allowed')}
             disabled={!prev}
-            onClick={() => prev && navigate(`/dashboard/learn/${courseId}/lesson/${prev.id}`)}>
+            onClick={() => prev && navigate(`/learn/${courseId}/lesson/${prev.id}`)}>
             <ChevronLeft className="w-4 h-4 flex-shrink-0"/>
             <div className="text-left min-w-0">
               <p className="text-xs text-gray-400">Previous</p>
@@ -500,7 +500,7 @@ export default function LessonPlayerPage() {
               next ? 'text-white shadow-md hover:shadow-lg hover:scale-[1.01]' : 'bg-gray-100 text-gray-300 cursor-not-allowed')}
             style={next ? { background: 'linear-gradient(135deg,var(--org-primary),var(--org-secondary))' } : {}}
             disabled={!next}
-            onClick={() => next && navigate(`/dashboard/learn/${courseId}/lesson/${next.id}`)}>
+            onClick={() => next && navigate(`/learn/${courseId}/lesson/${next.id}`)}>
             <div className="text-right min-w-0">
               <p className="text-xs opacity-70">Next</p>
               <p className="truncate max-w-[140px]">{next?.title ?? '—'}</p>
@@ -553,7 +553,7 @@ export default function LessonPlayerPage() {
                   const isDone = prog?.isCompleted || (isActive && completed);
                   return (
                     <button key={l.id}
-                      onClick={() => navigate(`/dashboard/learn/${courseId}/lesson/${l.id}`)}
+                      onClick={() => navigate(`/learn/${courseId}/lesson/${l.id}`)}
                       className={clsx(
                         'w-full flex items-start gap-3 px-4 py-3 text-left border-b border-gray-50 transition-all',
                         isActive

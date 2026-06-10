@@ -12,21 +12,24 @@ import type { Module, Lesson } from '../../types';
 import clsx from 'clsx';
 
 export default function CourseDetailPage() {
-  const { id } = useParams();
+  const { courseId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const qc = useQueryClient();
   const [expandedMods, setExpandedMods] = useState<Set<number>>(new Set([0]));
+  const numericCourseId = Number(courseId);
+  const hasValidCourseId = !Number.isNaN(numericCourseId) && numericCourseId > 0;
 
   const { data: course, isLoading } = useQuery({
-    queryKey: ['course-detail', id],
-    queryFn: () => coursesApi.get(Number(id)).then(r => r.data),
+    queryKey: ['course-detail', numericCourseId],
+    queryFn: () => coursesApi.get(numericCourseId).then(r => r.data),
+    enabled: hasValidCourseId,
   });
 
   const { data: exams = [] } = useQuery({
-    queryKey: ['course-exams', id],
-    queryFn: () => examsApi.getByCourse(Number(id)).then(r => r.data),
-    enabled: !!id,
+    queryKey: ['course-exams', numericCourseId],
+    queryFn: () => examsApi.getByCourse(numericCourseId).then(r => r.data),
+    enabled: hasValidCourseId,
   });
 
   const { data: myEnrollments = [] } = useQuery({
@@ -35,10 +38,10 @@ export default function CourseDetailPage() {
     enabled: !!user?.id,
   });
 
-  const enrollment = (myEnrollments as any[]).find((e: any) => e.courseId === Number(id));
+  const enrollment = (myEnrollments as any[]).find((e: any) => e.courseId === numericCourseId);
 
   const enrollMut = useMutation({
-    mutationFn: () => enrollmentsApi.enroll({ userId: user!.id, courseId: Number(id) }),
+    mutationFn: () => enrollmentsApi.enroll({ userId: user!.id, courseId: numericCourseId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['my-enrollments'] });
       toast.success('Enrolled! Start learning now.');
@@ -87,7 +90,7 @@ export default function CourseDetailPage() {
             <span className="flex items-center gap-1"><BookOpen className="w-4 h-4" />{totalLessons} lessons</span>
           </div>
 
-          <p className="text-gray-600 text-sm leading-relaxed mb-4">{course.description}</p>
+          <div className="text-gray-600 text-sm leading-relaxed mb-4 prose prose-sm" dangerouslySetInnerHTML={{ __html: course.description ?? '' }} />
 
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
@@ -102,7 +105,7 @@ export default function CourseDetailPage() {
               </div>
               {enrollment ? (
                 <button className="btn-primary"
-                  onClick={() => firstLesson && navigate(`/dashboard/learn/${course.id}/lesson/${firstLesson.id}`)}>
+                  onClick={() => firstLesson && navigate(`/learn/${course.id}/lesson/${firstLesson.id}`)}>
                   <Play className="w-4 h-4" /> Continue Learning
                 </button>
               ) : (
@@ -146,7 +149,7 @@ export default function CourseDetailPage() {
                     return (
                       <div key={lesson.id}
                         className={clsx('flex items-center gap-3 px-4 py-2.5', canPlay ? 'cursor-pointer hover:bg-gray-50' : 'opacity-60')}
-                        onClick={() => canPlay && enrollment && navigate(`/dashboard/learn/${course.id}/lesson/${lesson.id}`)}>
+                        onClick={() => canPlay && enrollment && navigate(`/learn/${course.id}/lesson/${lesson.id}`)}>
                         {canPlay
                           ? <Play className="w-3.5 h-3.5 text-brand-500 flex-shrink-0" />
                           : <Lock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />}

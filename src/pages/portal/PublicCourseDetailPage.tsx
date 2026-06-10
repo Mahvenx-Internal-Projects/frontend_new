@@ -103,7 +103,7 @@ export default function PublicCourseDetailPage() {
             </span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-black text-gray-900 max-w-3xl leading-tight mb-4">{course.title}</h1>
-          <p className="text-gray-500 max-w-2xl text-base mb-5 leading-relaxed">{course.description}</p>
+          <div className="text-gray-500 max-w-2xl text-base mb-5 leading-relaxed prose prose-sm" dangerouslySetInnerHTML={{ __html: course.description ?? '' }} />
           <div className="flex flex-wrap items-center gap-5 text-sm text-gray-500">
             <span className="flex items-center gap-1.5">
               <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
