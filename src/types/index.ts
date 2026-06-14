@@ -8,7 +8,7 @@ export type QuestionType = 'SingleChoice' | 'MultiChoice' | 'TrueFalse' | 'Short
 
 export interface User {
   id: number; firstName: string; lastName: string; email: string;
-  avatarUrl?: string; role: UserRole; isActive: boolean;
+  avatarUrl?: string; role: UserRole; roles?: UserRole[]; isActive: boolean;
   createdAt: string; lastLogin?: string;
   organizationId: number; organizationName: string;
 }

@@ -98,11 +98,18 @@ export default function FileUpload({ type, folder, onUploaded, onError, accept, 
         resolve(null);
       };
 
-      // For video uploads, go DIRECTLY to backend to bypass Vite proxy 413 limit
-      const isVideo = type === 'video';
-      const backendBase = isVideo ? 'https://localhost:7001' : '';
-      const endpoint = `${backendBase}/api/upload/${type}${folder ? `?folder=${folder}` : ''}`;
-      xhr.open('POST', endpoint);
+     // Use API URL from environment (same as all other APIs)
+const apiBaseUrl =
+  (import.meta.env.VITE_API_URL || '')
+    .replace(/\/$/, '')
+    .replace(/\/api$/, '');
+
+const endpoint =
+  `${apiBaseUrl}/api/upload/${type}${folder ? `?folder=${encodeURIComponent(folder)}` : ''}`;
+
+console.log('Upload Endpoint:', endpoint);
+
+xhr.open('POST', endpoint);
       if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
       xhr.send(formData);
     });

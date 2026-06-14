@@ -1,7 +1,15 @@
 import axios from 'axios';
 
+// Local dev  → hostname is localhost → use Vite proxy /api
+// Production → use full API URL directly
+const isLocal = typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const API_BASE = isLocal
+  ? '/api'
+  : (import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'https://api.worksupport360.com/api');
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: API_BASE,
   headers: { 'Content-Type': 'application/json' },
 });
 

@@ -49,9 +49,24 @@ import PublicCourseDetailPage from './pages/portal/PublicCourseDetailPage';
 import DynamicHomePage       from './pages/portal/DynamicHomePage';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuthStore();
-  const hasToken = isAuthenticated || !!localStorage.getItem('lms_token');
-  if (!hasToken) return <Navigate to="/login" replace />;
+  const { isAuthenticated, _hydrated } = useAuthStore();
+  const token = localStorage.getItem('lms_token');
+
+  // Not hydrated yet — token exists so show spinner, no token so go to login
+  if (!_hydrated) {
+    if (!token) return <Navigate to="/login" replace />;
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-50">
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-[var(--org-primary,#6366f1)] border-t-transparent rounded-full animate-spin mx-auto mb-3"/>
+          <p className="text-sm text-gray-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Hydrated — trust the store
+  if (!isAuthenticated && !token) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 

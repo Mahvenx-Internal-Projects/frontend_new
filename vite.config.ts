@@ -7,7 +7,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'https://localhost:55296',
+        target: 'https://api.worksupport360.com',
         changeOrigin: true,
         secure: false,
         configure: (proxy) => {

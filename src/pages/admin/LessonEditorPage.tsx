@@ -11,6 +11,11 @@ import FileUpload from '../../components/shared/FileUpload';
 import RichTextEditor from '../../components/shared/RichTextEditor';
 import clsx from 'clsx';
 
+const API_BASE = typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  ? '' : 'https://api.worksupport360.com';
+
+
 // ─── Types ────────────────────────────────────────────────────
 type BlockType = 'Heading'|'Text'|'Image'|'Video'|'Audio'|'PDF'|'File'|'Divider'|'Callout'|'Code';
 
@@ -320,7 +325,7 @@ export default function LessonEditorPage() {
   useEffect(() => {
     if (isNew) return;
     setLoading(true);
-    fetch(`/api/lessons/${lessonId}`, { headers: { Authorization: `Bearer ${token()}` } })
+    fetch(`${API_BASE}/api/lessons/${lessonId}`, { headers: { Authorization: `Bearer ${token()}` } })
       .then(r => r.json())
       .then(data => {
         setMeta({ title: data.title, description: data.description ?? '', isPreview: data.isPreview, isPublished: data.isPublished, durationSecs: data.durationSecs });
@@ -336,7 +341,7 @@ export default function LessonEditorPage() {
     try {
       let id: number;
       if (isNew) {
-        const res = await fetch('/api/lessons', {
+        const res = await fetch(`${API_BASE}/api/lessons`, {
           method: 'POST', headers: authHeaders(),
           body: JSON.stringify({ ...meta, type: 'Mixed', displayOrder: 0, moduleId: Number(moduleId), videoUrl: null, fileUrl: null, content: null })
         });
@@ -344,12 +349,12 @@ export default function LessonEditorPage() {
         const data = await res.json();
         id = data.id;
       } else {
-        const res = await fetch(`/api/lessons/${lessonId}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(meta) });
+        const res = await fetch(`${API_BASE}/api/lessons/${lessonId}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(meta) });
         if (!res.ok) throw new Error(await res.text());
         id = Number(lessonId);
       }
       const reindexed = blocks.map((b, i) => ({ ...b, order: i }));
-      const bRes = await fetch(`/api/lessons/${id}/blocks`, {
+      const bRes = await fetch(`${API_BASE}/api/lessons/${id}/blocks`, {
         method: 'PUT', headers: authHeaders(),
         body: JSON.stringify({ blocks: reindexed })
       });

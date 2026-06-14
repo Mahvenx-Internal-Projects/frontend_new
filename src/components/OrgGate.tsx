@@ -6,9 +6,10 @@ import UnauthorizedPage from '../pages/portal/UnauthorizedPage';
 interface Props { children: React.ReactNode; }
 
 export default function OrgGate({ children }: Props) {
-  const { loading, authorized, error, setOrg, setUnauthorized, setLoading } = useOrgStore();
+  const { loading, authorized, setOrg, setUnauthorized, setLoading } = useOrgStore();
 
   useEffect(() => {
+    // Send current URL — backend auto-bypasses the check on localhost
     const currentUrl = `${window.location.protocol}//${window.location.host}`;
     setLoading(true);
     portalApi.getOrgByUrl(currentUrl)

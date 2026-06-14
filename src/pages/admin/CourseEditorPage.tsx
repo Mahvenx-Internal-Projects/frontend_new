@@ -13,6 +13,11 @@ import FileUpload from '../../components/shared/FileUpload';
 import RichTextEditor from '../../components/shared/RichTextEditor';
 import clsx from 'clsx';
 
+const API_BASE = typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  ? '' : 'https://api.worksupport360.com';
+
+
 function fmtSecs(s: number) {
   if (!s) return '';
   const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
@@ -112,7 +117,7 @@ export default function CourseEditorPage() {
   const deleteLesson = async (lessonId: number) => {
     if (!confirm('Delete this lesson?')) return;
     const token = localStorage.getItem('lms_token');
-    await fetch(`/api/lessons/${lessonId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+    await fetch(`${API_BASE}/api/lessons/${lessonId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
     refetchModules();
     toast.success('Lesson deleted');
   };

@@ -8,18 +8,21 @@ import { useOrgStore } from '../store/orgStore';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { setAuth, isAuthenticated, user } = useAuthStore();
+  const { setAuth, isAuthenticated, _hydrated, user } = useAuthStore();
   const { org } = useOrgStore();
   const [form, setForm] = useState({ email: '', password: '' });
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const p = org?.primaryColor || '#f97316';
-  const s = org?.secondaryColor || '#ea580c';
+  const p = org?.primaryColor || '#6366f1';
+  const s = org?.secondaryColor || '#8b5cf6';
 
+  // ✅ Wait for zustand to finish reading localStorage before redirecting
   useEffect(() => {
-    if (isAuthenticated) navigate(user?.role === 'Student' ? '/dashboard/student' : '/dashboard/admin', { replace: true });
-  }, [isAuthenticated]);
+    if (_hydrated && isAuthenticated) {
+      navigate(user?.role === 'Student' ? '/dashboard/student' : '/dashboard/admin', { replace: true });
+    }
+  }, [_hydrated, isAuthenticated]);
 
   const handle = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,17 +37,27 @@ export default function LoginPage() {
     } finally { setLoading(false); }
   };
 
+  // ✅ While hydrating and token exists — show loading, don't render login form
+  if (!_hydrated && localStorage.getItem('lms_token')) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-[var(--org-primary)] border-t-transparent rounded-full animate-spin mx-auto mb-3"/>
+          <p className="text-sm text-gray-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-white to-orange-50 p-4"
-      style={{ fontFamily: `'${org?.themeFont || 'Poppins'}', sans-serif` }}>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-white to-indigo-50 p-4"
+      style={{ fontFamily: `'${org?.themeFont || 'Inter'}', sans-serif` }}>
       <div className="w-full max-w-md">
-        {/* Back to home */}
         <button onClick={() => navigate('/')}
           className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800 mb-8 transition-colors">
           <ArrowLeft className="w-4 h-4" /> Back to {org?.name ?? 'Home'}
         </button>
 
-        {/* Logo + brand */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl shadow-xl mb-4"
             style={{ background: `linear-gradient(135deg, ${p}, ${s})` }}>
@@ -56,15 +69,13 @@ export default function LoginPage() {
           <p className="text-gray-500 text-sm mt-1">Sign in to your account</p>
         </div>
 
-        {/* Form card */}
         <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
           <form onSubmit={handle} className="space-y-5">
             <div>
               <label className="block text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">Email Address</label>
               <input
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:border-transparent bg-gray-50 placeholder-gray-400 transition-all"
-                style={{ '--tw-ring-color': p } as any}
-                type="email" placeholder="you@example.com" required
+                type="email" placeholder="you@example.com" required autoFocus
                 value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
             </div>
             <div>
@@ -72,7 +83,6 @@ export default function LoginPage() {
               <div className="relative">
                 <input
                   className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:border-transparent bg-gray-50 pr-12 placeholder-gray-400 transition-all"
-                  style={{ '--tw-ring-color': p } as any}
                   type={showPw ? 'text' : 'password'} placeholder="••••••••" required
                   value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} />
                 <button type="button" onClick={() => setShowPw(!showPw)}
@@ -85,7 +95,7 @@ export default function LoginPage() {
             <button type="submit" disabled={loading}
               className="w-full py-3.5 rounded-xl font-bold text-white text-sm shadow-lg hover:shadow-xl hover:scale-[1.01] active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
               style={{ background: `linear-gradient(135deg, ${p}, ${s})` }}>
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Sign In'}
+              {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Signing in…</> : 'Sign In'}
             </button>
           </form>
 

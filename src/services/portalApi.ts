@@ -1,33 +1,53 @@
-import api from './api';
+import axios from 'axios';
+
+// Local dev  → hostname is localhost → use Vite proxy /api
+// Production → use full API URL directly
+const isLocal = typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const PORTAL_BASE = isLocal
+  ? '/api'
+  : (import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'https://api.worksupport360.com/api');
+
+const portalAxios = axios.create({
+  baseURL: PORTAL_BASE,
+  headers: { 'Content-Type': 'application/json' },
+});
+
+// Attach auth token if present
+portalAxios.interceptors.request.use(cfg => {
+  const token = localStorage.getItem('lms_token');
+  if (token) cfg.headers.Authorization = `Bearer ${token}`;
+  return cfg;
+});
 
 export const portalApi = {
   getHomePage: (orgId: number) =>
-    api.get(`/homepage/${orgId}`),
+    portalAxios.get(`/homepage/${orgId}`),
 
   // Resolve org from URL (called on app boot)
   getOrgByUrl: (url: string) =>
-    api.get('/portal/org', { params: { url } }),
+    portalAxios.get('/portal/org', { params: { url } }),
 
   // Public catalog data
   getCategories: (orgId: number) =>
-    api.get(`/portal/${orgId}/categories`),
+    portalAxios.get(`/portal/${orgId}/categories`),
 
   getCourses: (orgId: number, params?: {
     categoryId?: number; level?: string; search?: string;
     free?: boolean; page?: number; size?: number;
-  }) => api.get(`/portal/${orgId}/courses`, { params }),
+  }) => portalAxios.get(`/portal/${orgId}/courses`, { params }),
 
   getCourse: (orgId: number, courseId: number) =>
-    api.get(`/portal/${orgId}/courses/${courseId}`),
+    portalAxios.get(`/portal/${orgId}/courses/${courseId}`),
 
   getFeatured: (orgId: number) =>
-    api.get(`/portal/${orgId}/featured`),
+    portalAxios.get(`/portal/${orgId}/featured`),
 
   getStats: (orgId: number) =>
-    api.get(`/portal/${orgId}/stats`),
+    portalAxios.get(`/portal/${orgId}/stats`),
 
   getInstructors: (orgId: number) =>
-    api.get(`/portal/${orgId}/instructors`),
+    portalAxios.get(`/portal/${orgId}/instructors`),
 };
 
 export type PublicCategory = {

@@ -63,7 +63,8 @@ export default function UsersPage() {
     departmentIds: [] as number[]
   });
 
-  const availableRoles = me?.role === 'SuperAdmin' ? ALL_ROLES : ALL_ROLES.filter(r => r !== 'SuperAdmin');
+  const isSuperAdmin = me?.role === 'SuperAdmin' || (me?.roles ?? []).includes('SuperAdmin');
+  const availableRoles = isSuperAdmin ? ALL_ROLES : ALL_ROLES.filter(r => r !== 'SuperAdmin');
 
   const { data, isLoading } = useQuery({
     queryKey: ['users', search, roleFilter, page],
@@ -74,7 +75,7 @@ export default function UsersPage() {
   const { data: orgsData } = useQuery({
     queryKey: ['orgs-list'],
     queryFn: () => orgsApi.getAll({ size: 100 }).then(r => r.data),
-    enabled: me?.role === 'SuperAdmin',
+    enabled: me?.role === 'SuperAdmin' || me?.role === 'OrgAdmin',
   });
 
   const { data: departments = [] } = useQuery({
