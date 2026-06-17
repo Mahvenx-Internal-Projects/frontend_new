@@ -23,6 +23,7 @@ const adminNav: NavItem[] = [
   { label: 'Categories',      to: '/dashboard/categories',      icon: FolderTree },
   { label: 'Departments',     to: '/dashboard/departments',     icon: Briefcase },
   { label: 'Mock Tests',      to: '/dashboard/mock-tests',      icon: ClipboardList },
+  { label: 'Assignments',       to: '/dashboard/assignments',   icon: FileText },
   { label: 'Analytics',       to: '/dashboard/analytics',       icon: BarChart3 },
   { label: 'Payments',        to: '/dashboard/payments',        icon: CreditCard },
   { label: 'Homepage',        to: '/dashboard/homepage-editor', icon: Layout },

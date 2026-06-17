@@ -63,20 +63,42 @@ export default function AssignmentPage() {
 
   const createMut = useMutation({
     mutationFn: () => assignmentsApi.create({
-      ...form, maxMarks: Number(form.maxMarks),
-      courseId: Number(form.courseId), instructorId: user!.id,
-      organizationId: user!.organizationId,
+      title: form.title,
+      description: form.description,
+      attachmentUrl: form.attachmentUrl,
+      // If the due date is empty, it sends null instead of an empty string ""
+      dueDate: form.dueDate ? form.dueDate : null, 
+      maxMarks: Number(form.maxMarks),
+      courseId: Number(form.courseId),
+      // CHANGED: We renamed 'instructorId' to 'createdById' to match C#
+      createdById: user!.id 
     }),
-    onSuccess: () => { toast.success('Assignment created & students notified!'); qc.invalidateQueries({queryKey:['assignments']}); setShowForm(false); setForm({title:'',description:'',maxMarks:'100',dueDate:'',courseId:'',attachmentUrl:''}); },
+    onSuccess: () => { 
+      toast.success('Assignment created & students notified!'); 
+      qc.invalidateQueries({queryKey:['assignments']}); 
+      setShowForm(false); 
+      setForm({title:'',description:'',maxMarks:'100',dueDate:'',courseId:'',attachmentUrl:''}); 
+    },
     onError: () => toast.error('Failed to create'),
   });
 
   const updateMut = useMutation({
     mutationFn: () => assignmentsApi.update(editingId!, {
-      ...form, maxMarks: Number(form.maxMarks),
+      title: form.title,
+      description: form.description,
+      attachmentUrl: form.attachmentUrl,
+      dueDate: form.dueDate ? form.dueDate : null,
+      maxMarks: Number(form.maxMarks),
       courseId: Number(form.courseId),
+      createdById: user!.id // Aligns with the C# backend DTO fields
     }),
-    onSuccess: () => { toast.success('Updated!'); qc.invalidateQueries({queryKey:['assignments']}); setEditingId(null); setShowForm(false); },
+    onSuccess: () => { 
+      toast.success('Updated!'); 
+      qc.invalidateQueries({queryKey:['assignments']}); 
+      setEditingId(null); 
+      setShowForm(false); 
+    },
+    onError: () => toast.error('Failed to update assignment'),
   });
 
   const deleteMut = useMutation({
@@ -395,10 +417,15 @@ function StudentSubmitButton({ assignment, onSubmitted }: { assignment: any; onS
     mutationFn: () => assignmentsApi.submit({
       assignmentId: assignment.id,
       studentId: user!.id,
-      notes: form.notes,
+      // CHANGED: Match 'SubmissionText' which your C# backend requires
+      submissionText: form.notes, 
       fileUrl: form.fileUrl,
     }),
-    onSuccess: () => { toast.success('Submitted! Instructor notified.'); setOpen(false); onSubmitted(); },
+    onSuccess: () => { 
+      toast.success('Submitted! Instructor notified.'); 
+      setOpen(false); 
+      onSubmitted(); 
+    },
     onError: () => toast.error('Submission failed'),
   });
 
