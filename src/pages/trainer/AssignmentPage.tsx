@@ -23,12 +23,12 @@ export default function AssignmentPage() {
   const qc = useQueryClient();
   const isInstructor = user?.role !== 'Student';
 
+// Line 25
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number|null>(null);
   const [expandedId, setExpandedId] = useState<number|null>(null);
-  const [selectedCourse, setSelectedCourse] = useState<number|null>(null);
+  const [selectedCourse, setSelectedCourse] = useState<number>(0); // Changed from null to 0
   const [gradeModal, setGradeModal] = useState<any|null>(null);
-
   const [form, setForm] = useState({
     title: '', description: '', maxMarks: '100',
     dueDate: '', courseId: '', attachmentUrl: ''
@@ -45,13 +45,17 @@ export default function AssignmentPage() {
     enabled: !!user?.id && isInstructor,
   });
 
+  // Line 41
   const { data: assignments = [], isLoading } = useQuery({
     queryKey: ['assignments', selectedCourse, user?.id],
-    queryFn: () => selectedCourse
-      ? assignmentsApi.getByCourse(selectedCourse).then(r => r.data)
-      : isInstructor
-        ? assignmentsApi.getByCourse(0).then(r => r.data).catch(() => [])
-        : assignmentsApi.getForStudent(user!.id).then(r => r.data),
+    queryFn: () => {
+      if (isInstructor) {
+        // Automatically passes either the specific course ID or 0 for "All Courses"
+        return assignmentsApi.getByCourse(selectedCourse).then(r => r.data).catch(() => []);
+      } else {
+        return assignmentsApi.getForStudent(user!.id).then(r => r.data);
+      }
+    },
     enabled: !!user,
   });
 
@@ -63,20 +67,42 @@ export default function AssignmentPage() {
 
   const createMut = useMutation({
     mutationFn: () => assignmentsApi.create({
-      ...form, maxMarks: Number(form.maxMarks),
-      courseId: Number(form.courseId), instructorId: user!.id,
-      organizationId: user!.organizationId,
+      title: form.title,
+      description: form.description,
+      attachmentUrl: form.attachmentUrl,
+      // If the due date is empty, it sends null instead of an empty string ""
+      dueDate: form.dueDate ? form.dueDate : null, 
+      maxMarks: Number(form.maxMarks),
+      courseId: Number(form.courseId),
+      // CHANGED: We renamed 'instructorId' to 'createdById' to match C#
+      createdById: user!.id 
     }),
-    onSuccess: () => { toast.success('Assignment created & students notified!'); qc.invalidateQueries({queryKey:['assignments']}); setShowForm(false); setForm({title:'',description:'',maxMarks:'100',dueDate:'',courseId:'',attachmentUrl:''}); },
+    onSuccess: () => { 
+      toast.success('Assignment created & students notified!'); 
+      qc.invalidateQueries({queryKey:['assignments']}); 
+      setShowForm(false); 
+      setForm({title:'',description:'',maxMarks:'100',dueDate:'',courseId:'',attachmentUrl:''}); 
+    },
     onError: () => toast.error('Failed to create'),
   });
 
   const updateMut = useMutation({
     mutationFn: () => assignmentsApi.update(editingId!, {
-      ...form, maxMarks: Number(form.maxMarks),
+      title: form.title,
+      description: form.description,
+      attachmentUrl: form.attachmentUrl,
+      dueDate: form.dueDate ? form.dueDate : null,
+      maxMarks: Number(form.maxMarks),
       courseId: Number(form.courseId),
+      createdById: user!.id // Aligns with the C# backend DTO fields
     }),
-    onSuccess: () => { toast.success('Updated!'); qc.invalidateQueries({queryKey:['assignments']}); setEditingId(null); setShowForm(false); },
+    onSuccess: () => { 
+      toast.success('Updated!'); 
+      qc.invalidateQueries({queryKey:['assignments']}); 
+      setEditingId(null); 
+      setShowForm(false); 
+    },
+    onError: () => toast.error('Failed to update assignment'),
   });
 
   const deleteMut = useMutation({
@@ -87,12 +113,16 @@ export default function AssignmentPage() {
   const gradeMut = useMutation({
     mutationFn: () => assignmentsApi.grade({
       submissionId: gradeModal.id,
-      marks: Number(gradeForm.marks),
+      marksObtained: Number(gradeForm.marks), // <-- CHANGED: Matches C# GradeSubmissionRequest DTO exactly
       feedback: gradeForm.feedback,
       status: gradeForm.status,
     }),
-    onSuccess: () => { toast.success('Graded & student notified!'); refetchSubs(); setGradeModal(null); },
-    onError: () => toast.error('Failed to grade'),
+    onSuccess: () => { 
+      toast.success('Graded & student notified!'); 
+      refetchSubs(); 
+      setGradeModal(null); 
+    },
+    onError: () => toast.error('Failed to grade assignment execution context'),
   });
 
   const startEdit = (a: any) => {
@@ -137,13 +167,17 @@ export default function AssignmentPage() {
           </div>
         ))}
       </div>
-
+      
       {/* Course filter (instructor) */}
       {isInstructor && (courses as any[]).length > 0 && (
         <div className="flex items-center gap-3">
           <label className="text-sm font-semibold text-gray-600">Filter by Course:</label>
-          <select className="input w-64" value={selectedCourse ?? ''} onChange={e => setSelectedCourse(e.target.value ? Number(e.target.value) : null)}>
-            <option value="">All Courses</option>
+          <select 
+            className="input w-64" 
+            value={selectedCourse} 
+            onChange={e => setSelectedCourse(Number(e.target.value))}
+          >
+            <option value={0}>All Courses</option>
             {(courses as any[]).map((c:any) => <option key={c.id} value={c.id}>{c.title}</option>)}
           </select>
         </div>
@@ -395,10 +429,15 @@ function StudentSubmitButton({ assignment, onSubmitted }: { assignment: any; onS
     mutationFn: () => assignmentsApi.submit({
       assignmentId: assignment.id,
       studentId: user!.id,
-      notes: form.notes,
+      // CHANGED: Match 'SubmissionText' which your C# backend requires
+      submissionText: form.notes, 
       fileUrl: form.fileUrl,
-    }),
-    onSuccess: () => { toast.success('Submitted! Instructor notified.'); setOpen(false); onSubmitted(); },
+    }),  
+    onSuccess: () => { 
+      toast.success('Submitted! Instructor notified.'); 
+      setOpen(false); 
+      onSubmitted(); 
+    },
     onError: () => toast.error('Submission failed'),
   });
 
