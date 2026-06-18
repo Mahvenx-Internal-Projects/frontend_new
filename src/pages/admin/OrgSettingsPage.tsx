@@ -1,322 +1,415 @@
 import { useState, useEffect } from 'react';
-import FileUpload from '../../components/shared/FileUpload';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Save, Palette, Globe, Link2, Type, Eye, CheckCircle2 } from 'lucide-react';
+import { Save, Plus, Trash2, Eye, EyeOff, Loader2, Globe, Phone, Mail, MapPin, FileText, Gift, Radio } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { orgsApi } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import { useOrgStore } from '../../store/orgStore';
+import { uploadApi } from '../../services/api';
 import clsx from 'clsx';
 
-const PRESET_THEMES = [
-  { name: 'Saffron India', primary: '#f97316', secondary: '#ea580c', accent: '#fbbf24', font: 'Plus Jakarta Sans', mode: 'light' },
-  { name: 'Ocean Blue',    primary: '#2563eb', secondary: '#1d4ed8', accent: '#06b6d4', font: 'DM Sans',           mode: 'light' },
-  { name: 'Forest Green',  primary: '#16a34a', secondary: '#15803d', accent: '#84cc16', font: 'Nunito',            mode: 'light' },
-  { name: 'Royal Purple',  primary: '#7c3aed', secondary: '#6d28d9', accent: '#a855f7', font: 'Outfit',            mode: 'light' },
-  { name: 'Crimson',       primary: '#dc2626', secondary: '#b91c1c', accent: '#f59e0b', font: 'Poppins',           mode: 'light' },
-  { name: 'Midnight Dark', primary: '#6366f1', secondary: '#4f46e5', accent: '#f59e0b', font: 'Space Grotesk',     mode: 'dark' },
-  { name: 'Rose Gold',     primary: '#e11d48', secondary: '#be123c', accent: '#fb923c', font: 'Cormorant Garamond', mode: 'light' },
-  { name: 'Teal Modern',   primary: '#0d9488', secondary: '#0f766e', accent: '#f59e0b', font: 'Albert Sans',       mode: 'light' },
+const API_BASE = typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  ? '' : 'https://api.worksupport360.com';
+
+const tok = () => localStorage.getItem('lms_token') ?? '';
+
+const TABS = [
+  { id: 'branding',  label: 'Branding' },
+  { id: 'homepage',  label: 'Homepage Features' },
+  { id: 'content',   label: 'About & Contact' },
+  { id: 'menus',     label: 'Custom Menus' },
+  { id: 'enquiries', label: 'Enquiries' },
 ];
 
-const FONTS = ['Plus Jakarta Sans', 'Poppins', 'DM Sans', 'Nunito', 'Outfit', 'Space Grotesk', 'Albert Sans', 'Cormorant Garamond', 'Playfair Display', 'Inter'];
-
 export default function OrgSettingsPage() {
-  const { user } = useAuthStore();
+  const { user }  = useAuthStore();
   const { org, setOrg } = useOrgStore();
-  const qc = useQueryClient();
-  const [activeTab, setActiveTab] = useState<'theme' | 'general' | 'payment'>('theme');
-  const [previewTheme, setPreviewTheme] = useState<typeof PRESET_THEMES[0] | null>(null);
+  const qc        = useQueryClient();
+  const [tab, setTab]   = useState('branding');
+  const [saving, setSaving] = useState(false);
 
-  const { data: orgData } = useQuery({
-    queryKey: ['org-detail', user?.organizationId],
-    queryFn: () => orgsApi.get(user!.organizationId).then(r => r.data),
-    enabled: !!user?.organizationId,
-  });
+  const orgId = user?.organizationId ?? org?.id;
 
-  const [form, setForm] = useState({
-    name: '', tagline: '', website: '', portalUrl: '',
-    primaryColor: '#f97316', secondaryColor: '#ea580c', accentColor: '#fbbf24',
-    themeFont: 'Plus Jakarta Sans', themeMode: 'light',
-    logoUrl: '', bannerUrl: '',
-    signatureUrl: '', authorizedBy: '', authorizedTitle: 'Authorized Signatory',
-    razorpayKeyId: '', razorpayKeySecret: '', currency: 'INR',
-  });
-
-  useEffect(() => {
-    if (orgData) {
-      setForm({
-        name:           orgData.name || '',
-        tagline:        orgData.tagline || '',
-        website:        orgData.website || '',
-        portalUrl:      orgData.portalUrl || '',
-        primaryColor:   orgData.primaryColor || '#f97316',
-        secondaryColor: orgData.secondaryColor || '#ea580c',
-        accentColor:    orgData.accentColor || '#fbbf24',
-        themeFont:      orgData.themeFont || 'Plus Jakarta Sans',
-        themeMode:      orgData.themeMode || 'light',
-        logoUrl:        orgData.logoUrl || '',
-        bannerUrl:      orgData.bannerUrl || '',
-        signatureUrl:   (orgData as any).signatureUrl || '',
-        authorizedBy:   (orgData as any).authorizedBy || '',
-        authorizedTitle:(orgData as any).authorizedTitle || 'Authorized Signatory',
-        razorpayKeyId:  orgData.razorpayKeyId || '',
-        razorpayKeySecret: orgData.razorpayKeySecret || '',
-        currency:       orgData.currency || 'INR',
+  const { data: settings, isLoading } = useQuery({
+    queryKey: ['org-settings', orgId],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/api/organizations/${orgId}`, {
+        headers: { Authorization: `Bearer ${tok()}` }
       });
-    }
-  }, [orgData]);
-
-  const current = previewTheme || { primary: form.primaryColor, secondary: form.secondaryColor, accent: form.accentColor, font: form.themeFont };
-
-  const saveMut = useMutation({
-    mutationFn: () => orgsApi.update(user!.organizationId, {
-      name: form.name, tagline: form.tagline, website: form.website, portalUrl: form.portalUrl,
-      primaryColor: form.primaryColor, secondaryColor: form.secondaryColor, accentColor: form.accentColor,
-      themeFont: form.themeFont, logoUrl: form.logoUrl, bannerUrl: form.bannerUrl,
-      signatureUrl: form.signatureUrl, authorizedBy: form.authorizedBy, authorizedTitle: form.authorizedTitle,
-      razorpayKeyId: form.razorpayKeyId,
-    }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['org-detail'] });
-      // Update global org theme
-      if (org) {
-        setOrg({ ...org, primaryColor: form.primaryColor, secondaryColor: form.secondaryColor, accentColor: form.accentColor, themeFont: form.themeFont, name: form.name, tagline: form.tagline });
-      }
-      toast.success('Organization settings saved!');
-      setPreviewTheme(null);
+      return r.json();
     },
-    onError: () => toast.error('Failed to save'),
+    enabled: !!orgId,
   });
 
-  const applyPreset = (preset: typeof PRESET_THEMES[0]) => {
-    setPreviewTheme(preset);
-    setForm(f => ({
-      ...f,
-      primaryColor: preset.primary,
-      secondaryColor: preset.secondary,
-      accentColor: preset.accent,
-      themeFont: preset.font,
-      themeMode: preset.mode,
-    }));
+  const [form, setForm] = useState<any>({});
+  useEffect(() => { if (settings) setForm(settings); }, [settings]);
+  const f = (k: string, v: any) => setForm((p: any) => ({ ...p, [k]: v }));
+  const tog = (k: string) => f(k, !form[k]);
+
+  const [customMenus, setCustomMenus] = useState<any[]>([]);
+  useEffect(() => {
+    try { setCustomMenus(JSON.parse(settings?.customMenuJson ?? '[]')); } catch { setCustomMenus([]); }
+  }, [settings?.customMenuJson]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const payload = { ...form, customMenuJson: JSON.stringify(customMenus) };
+      const r = await fetch(`${API_BASE}/api/organizations/${orgId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok()}` },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) throw new Error();
+      setOrg({ ...org!, ...payload });
+      qc.invalidateQueries({ queryKey: ['org-settings'] });
+      toast.success('Settings saved!');
+    } catch { toast.error('Failed to save'); }
+    finally { setSaving(false); }
   };
 
+  const [logoUploading, setLogoUploading] = useState(false);
+  const uploadLogo = async (file: File) => {
+    setLogoUploading(true);
+    try {
+      const res = await uploadApi.image(file, 'logos');
+      f('logoUrl', res.data.url);
+      toast.success('Logo uploaded');
+    } catch { toast.error('Upload failed'); }
+    finally { setLogoUploading(false); }
+  };
+
+  const { data: enquiries = [] } = useQuery({
+    queryKey: ['enquiries', orgId],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/api/enquiries?orgId=${orgId}`, {
+        headers: { Authorization: `Bearer ${tok()}` }
+      });
+      return r.json();
+    },
+    enabled: !!orgId && tab === 'enquiries',
+  });
+
+  if (isLoading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-gray-300"/></div>;
+
   return (
-    <div className="max-w-5xl space-y-6">
+    <div className="space-y-6 max-w-4xl">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Organization Settings</h1>
-          <p className="text-sm text-gray-500 mt-1">Customize your portal's look, feel and payment options</p>
+          <h1 className="page-title">Organization Settings</h1>
+          <p className="page-sub">Manage branding, homepage features, and content</p>
         </div>
-        <button className="btn-primary flex items-center gap-2" onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>
-          <Save className="w-4 h-4" /> {saveMut.isPending ? 'Saving…' : 'Save Changes'}
+        <button className="btn-primary" onClick={save} disabled={saving}>
+          {saving ? <><Loader2 className="w-4 h-4 animate-spin"/> Saving…</> : <><Save className="w-4 h-4"/> Save All</>}
         </button>
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-gray-200 gap-1">
-        {([['theme','🎨 Theme & Branding'], ['general','⚙️ General'], ['payment','💳 Payment']] as const).map(([t, label]) => (
-          <button key={t} onClick={() => setActiveTab(t)}
-            className={clsx('px-4 py-2.5 text-sm font-medium border-b-2 transition-colors',
-              activeTab === t ? 'border-[var(--org-primary)] text-[var(--org-primary)]' : 'border-transparent text-gray-500 hover:text-gray-800')}>
-            {label}
+      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 overflow-x-auto">
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={clsx('flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+              tab === t.id ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700')}>
+            {t.label}
           </button>
         ))}
       </div>
 
-      {activeTab === 'theme' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left: settings */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Preset themes */}
-            <div className="card p-5">
-              <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2"><Palette className="w-4 h-4" /> Quick Theme Presets</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {PRESET_THEMES.map(preset => {
-                  const isActive = form.primaryColor === preset.primary && form.themeFont === preset.font;
-                  return (
-                    <button key={preset.name} onClick={() => applyPreset(preset)}
-                      className={clsx('relative rounded-xl p-3 border-2 transition-all text-left hover:shadow-md',
-                        isActive ? 'border-gray-900 shadow-lg' : 'border-gray-200 hover:border-gray-400')}>
-                      {/* Color swatches */}
-                      <div className="flex gap-1 mb-2">
-                        <div className="w-5 h-5 rounded-full shadow-sm" style={{ background: preset.primary }} />
-                        <div className="w-5 h-5 rounded-full shadow-sm" style={{ background: preset.secondary }} />
-                        <div className="w-5 h-5 rounded-full shadow-sm" style={{ background: preset.accent }} />
-                        {preset.mode === 'dark' && <span className="ml-auto text-xs">🌙</span>}
-                      </div>
-                      <p className="text-xs font-semibold text-gray-700">{preset.name}</p>
-                      <p className="text-xs text-gray-400">{preset.font}</p>
-                      {isActive && (
-                        <div className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-gray-900 flex items-center justify-center">
-                          <CheckCircle2 className="w-3 h-3 text-white" />
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
+      {/* ── Branding tab ── */}
+      {tab === 'branding' && (
+        <div className="space-y-5">
+          <div className="card p-6 space-y-5">
+            <h3 className="font-bold text-gray-900">Organization Identity</h3>
+
+            {/* Logo */}
+            <div>
+              <label className="label">Logo</label>
+              <div className="flex items-center gap-4">
+                {form.logoUrl && <img src={form.logoUrl} alt="Logo" className="w-16 h-16 rounded-xl object-cover border border-gray-200"/>}
+                <div>
+                  <label className="btn-secondary cursor-pointer">
+                    {logoUploading ? <><Loader2 className="w-4 h-4 animate-spin"/> Uploading…</> : 'Upload Logo'}
+                    <input type="file" accept="image/*" className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) uploadLogo(f); }}/>
+                  </label>
+                  {form.logoUrl && <button className="ml-2 text-xs text-red-500 hover:underline" onClick={() => f('logoUrl', '')}>Remove</button>}
+                </div>
               </div>
+              <input className="input mt-2" placeholder="Or paste logo URL" value={form.logoUrl ?? ''} onChange={e => f('logoUrl', e.target.value)}/>
             </div>
 
-            {/* Custom colors */}
-            <div className="card p-5">
-              <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2"><Type className="w-4 h-4" /> Custom Colors & Font</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-                {[
-                  { label: 'Primary Color', key: 'primaryColor' as const },
-                  { label: 'Secondary Color', key: 'secondaryColor' as const },
-                  { label: 'Accent Color', key: 'accentColor' as const },
-                ].map(({ label, key }) => (
-                  <div key={key}>
-                    <label className="label">{label}</label>
-                    <div className="flex items-center gap-2">
-                      <input type="color" className="w-10 h-10 rounded-lg cursor-pointer border border-gray-200"
-                        value={form[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} />
-                      <input className="input flex-1 font-mono text-sm" value={form[key]}
-                        onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} />
-                    </div>
-                  </div>
-                ))}
+            <div>
+              <label className="label">Organization Name</label>
+              <input className="input" value={form.name ?? ''} onChange={e => f('name', e.target.value)}/>
+            </div>
+            <div>
+              <label className="label">Tagline</label>
+              <input className="input" placeholder="Your inspiring tagline" value={form.tagline ?? ''} onChange={e => f('tagline', e.target.value)}/>
+            </div>
+            <div>
+              <label className="label">Website</label>
+              <input className="input" type="url" placeholder="https://example.com" value={form.website ?? ''} onChange={e => f('website', e.target.value)}/>
+            </div>
+            <div>
+              <label className="label">Portal URL</label>
+              <input className="input" placeholder="https://yourportal.com" value={form.portalUrl ?? ''} onChange={e => f('portalUrl', e.target.value)}/>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label">Primary Color</label>
+                <div className="flex gap-2">
+                  <input type="color" className="w-10 h-10 rounded-lg border border-gray-300 cursor-pointer"
+                    value={form.primaryColor ?? '#6366f1'} onChange={e => f('primaryColor', e.target.value)}/>
+                  <input className="input flex-1" value={form.primaryColor ?? '#6366f1'} onChange={e => f('primaryColor', e.target.value)}/>
+                </div>
               </div>
               <div>
-                <label className="label">Theme Font</label>
-                <select className="input" value={form.themeFont} onChange={e => setForm(f => ({ ...f, themeFont: e.target.value }))}>
-                  {FONTS.map(f => <option key={f} value={f}>{f}</option>)}
-                </select>
-              </div>
-            </div>
-
-            {/* Logos */}
-            <div className="card p-5">
-              <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2"><Eye className="w-4 h-4" /> Branding Assets</h2>
-              <div className="space-y-3">
-                <div>
-                  <label className="label">Logo URL</label>
-                  <input className="input" placeholder="https://cdn.example.com/logo.png" value={form.logoUrl}
-                    onChange={e => setForm(f => ({ ...f, logoUrl: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="label">Banner / Hero Image URL</label>
-                  <input className="input" placeholder="https://cdn.example.com/banner.jpg" value={form.bannerUrl}
-                    onChange={e => setForm(f => ({ ...f, bannerUrl: e.target.value }))} />
+                <label className="label">Secondary Color</label>
+                <div className="flex gap-2">
+                  <input type="color" className="w-10 h-10 rounded-lg border border-gray-300 cursor-pointer"
+                    value={form.secondaryColor ?? '#8b5cf6'} onChange={e => f('secondaryColor', e.target.value)}/>
+                  <input className="input flex-1" value={form.secondaryColor ?? '#8b5cf6'} onChange={e => f('secondaryColor', e.target.value)}/>
                 </div>
               </div>
             </div>
           </div>
+        </div>
+      )}
 
-          {/* Right: Live preview */}
-          <div className="space-y-4">
-            <div className="card overflow-hidden sticky top-4">
-              <div className="px-4 py-3 border-b border-gray-100">
-                <p className="text-sm font-semibold text-gray-700 flex items-center gap-2"><Eye className="w-4 h-4" /> Live Preview</p>
+      {/* ── Homepage Features tab ── */}
+      {tab === 'homepage' && (
+        <div className="space-y-4">
+          <div className="card p-6 space-y-5">
+            <h3 className="font-bold text-gray-900">Feature Toggles</h3>
+            <p className="text-sm text-gray-500">Enable or disable sections on your public homepage</p>
+
+            {[
+              { key: 'showAllCourses',    label: 'All Courses section',    desc: 'Show course catalog on homepage' },
+              { key: 'showCourseBatches', label: 'Course Batches section', desc: 'Show training batch cards with Register Interest button' },
+              { key: 'showAboutUs',       label: 'About Us section',       desc: 'Show About Us content on homepage' },
+              { key: 'showContactUs',     label: 'Contact Us section',     desc: 'Show contact details and enquiry form' },
+              { key: 'showOpenings',      label: 'Openings / Jobs section', desc: 'Show career openings on homepage' },
+            ].map(item => (
+              <div key={item.key} className="flex items-center justify-between p-4 rounded-xl border border-gray-100 hover:bg-gray-50">
+                <div>
+                  <p className="font-semibold text-sm text-gray-800">{item.label}</p>
+                  <p className="text-xs text-gray-500">{item.desc}</p>
+                </div>
+                <button onClick={() => tog(item.key)}
+                  className={clsx('w-12 h-6 rounded-full transition-colors relative',
+                    form[item.key] ? 'bg-green-500' : 'bg-gray-300')}>
+                  <span className={clsx('absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform',
+                    form[item.key] ? 'translate-x-7' : 'translate-x-1')}/>
+                </button>
               </div>
-              <div className="p-4 space-y-3" style={{ fontFamily: `'${current.font}', sans-serif` }}>
-                {/* Mini navbar */}
-                <div className="rounded-xl overflow-hidden shadow-sm">
-                  <div className="flex items-center justify-between px-3 py-2"
-                    style={{ background: `linear-gradient(135deg, ${current.primary}, ${current.secondary || current.primary})` }}>
-                    <div className="flex items-center gap-2">
-                      <div className="w-5 h-5 rounded-lg bg-white/20 flex items-center justify-center text-white text-xs font-black">
-                        {form.name.charAt(0) || 'L'}
-                      </div>
-                      <span className="text-white text-xs font-bold truncate max-w-[80px]">{form.name || 'Portal Name'}</span>
+            ))}
+          </div>
+
+          {/* Scrolling Banner */}
+          <div className="card p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-gray-900 flex items-center gap-2"><Radio className="w-4 h-4"/> Scrolling Banner</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Continuous scrolling text at the top of the page</p>
+              </div>
+              <button onClick={() => tog('showScrollingBanner')}
+                className={clsx('w-12 h-6 rounded-full transition-colors relative', form.showScrollingBanner ? 'bg-green-500' : 'bg-gray-300')}>
+                <span className={clsx('absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform', form.showScrollingBanner ? 'translate-x-7' : 'translate-x-1')}/>
+              </button>
+            </div>
+            {form.showScrollingBanner && (
+              <div>
+                <label className="label">Banner Text <span className="font-normal text-gray-400">(separate items with |)</span></label>
+                <input className="input" placeholder="Admissions Open | New Batch Starting | Enroll Now"
+                  value={form.scrollingBannerText ?? ''} onChange={e => f('scrollingBannerText', e.target.value)}/>
+                <p className="text-xs text-gray-400 mt-1">Example: "New Batch Starting Jan 2025 | Limited Seats | Call Now"</p>
+              </div>
+            )}
+          </div>
+
+          {/* Referral Offer */}
+          <div className="card p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-gray-900 flex items-center gap-2"><Gift className="w-4 h-4"/> Referral Offer Banner</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Floating card on right side highlighting referral reward</p>
+              </div>
+              <button onClick={() => tog('showReferralOffer')}
+                className={clsx('w-12 h-6 rounded-full transition-colors relative', form.showReferralOffer ? 'bg-green-500' : 'bg-gray-300')}>
+                <span className={clsx('absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform', form.showReferralOffer ? 'translate-x-7' : 'translate-x-1')}/>
+              </button>
+            </div>
+            {form.showReferralOffer && (
+              <div>
+                <label className="label">Offer Text</label>
+                <input className="input" placeholder="Earn ₹2500 for each referral who enrolls"
+                  value={form.referralOfferText ?? ''} onChange={e => f('referralOfferText', e.target.value)}/>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Content tab ── */}
+      {tab === 'content' && (
+        <div className="space-y-5">
+          {/* About Us */}
+          <div className="card p-6 space-y-4">
+            <h3 className="font-bold text-gray-900">About Us Content</h3>
+            <p className="text-xs text-gray-500">This content appears in the About Us section of your homepage. Supports HTML.</p>
+            <textarea className="input resize-none font-mono text-xs" rows={8}
+              placeholder="<p>We are a leading training institution...</p>"
+              value={form.aboutUsContent ?? ''} onChange={e => f('aboutUsContent', e.target.value)}/>
+            {form.aboutUsContent && (
+              <div className="border border-gray-200 rounded-xl p-4 bg-gray-50">
+                <p className="text-xs font-semibold text-gray-500 mb-2">Preview:</p>
+                <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: form.aboutUsContent }}/>
+              </div>
+            )}
+          </div>
+
+          {/* Openings */}
+          <div className="card p-6 space-y-4">
+            <h3 className="font-bold text-gray-900">Openings / Careers Content</h3>
+            <p className="text-xs text-gray-500">Job openings, trainer positions, etc. Supports HTML.</p>
+            <textarea className="input resize-none font-mono text-xs" rows={6}
+              placeholder="<h3>We are hiring!</h3><p>Apply for...</p>"
+              value={form.openingsContent ?? ''} onChange={e => f('openingsContent', e.target.value)}/>
+          </div>
+
+          {/* Contact */}
+          <div className="card p-6 space-y-4">
+            <h3 className="font-bold text-gray-900">Contact Information</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="label flex items-center gap-1"><Phone className="w-3 h-3"/> Phone</label>
+                <input className="input" placeholder="+91 9876543210" value={form.contactPhone ?? ''} onChange={e => f('contactPhone', e.target.value)}/>
+              </div>
+              <div>
+                <label className="label flex items-center gap-1"><Mail className="w-3 h-3"/> Email</label>
+                <input className="input" type="email" placeholder="info@example.com" value={form.contactEmail ?? ''} onChange={e => f('contactEmail', e.target.value)}/>
+              </div>
+            </div>
+            <div>
+              <label className="label flex items-center gap-1"><MapPin className="w-3 h-3"/> Address</label>
+              <textarea className="input resize-none" rows={3} placeholder="123 Main Street, City, State 123456"
+                value={form.contactAddress ?? ''} onChange={e => f('contactAddress', e.target.value)}/>
+            </div>
+            <div>
+              <label className="label flex items-center gap-1"><Globe className="w-3 h-3"/> Google Maps Embed URL</label>
+              <input className="input" placeholder="https://www.google.com/maps/embed?pb=..."
+                value={form.contactMapEmbed ?? ''} onChange={e => f('contactMapEmbed', e.target.value)}/>
+              <p className="text-xs text-gray-400 mt-1">Go to Google Maps → Share → Embed a map → copy the src URL from the iframe code</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Custom Menus tab ── */}
+      {tab === 'menus' && (
+        <div className="space-y-4">
+          <div className="card p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-gray-900">Custom Navigation Menus</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Add extra menu items — either links or full pages with content</p>
+              </div>
+              <button className="btn-secondary text-sm" onClick={() => setCustomMenus(m => [...m, { label: '', url: '#new-page', isPage: true, pageContent: '' }])}>
+                <Plus className="w-4 h-4"/> Add Menu
+              </button>
+            </div>
+
+            {customMenus.length === 0 && (
+              <p className="text-center text-sm text-gray-400 py-6">No custom menus yet — add one above</p>
+            )}
+
+            {customMenus.map((m, i) => (
+              <div key={i} className="border border-gray-200 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="label text-xs">Menu Label</label>
+                      <input className="input text-sm" placeholder="e.g. Gallery" value={m.label}
+                        onChange={e => setCustomMenus(ms => ms.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}/>
                     </div>
-                    <div className="flex gap-1">
-                      <div className="px-2 py-0.5 rounded-md bg-white/20 text-white text-xs">Login</div>
+                    <div>
+                      <label className="label text-xs">URL or Anchor</label>
+                      <input className="input text-sm" placeholder="#gallery or https://..."
+                        value={m.url}
+                        onChange={e => setCustomMenus(ms => ms.map((x, j) => j === i ? { ...x, url: e.target.value } : x))}/>
                     </div>
                   </div>
-                  {/* Hero */}
-                  <div className="p-3 text-center"
-                    style={{ background: `linear-gradient(135deg, ${current.primary}15, ${(current as any).accent || current.primary}20)` }}>
-                    <p className="font-black text-sm" style={{ color: current.primary }}>{form.name || 'Your Academy'}</p>
-                    <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{form.tagline || 'Learn without limits'}</p>
-                    <button className="mt-2 text-xs px-3 py-1 rounded-lg text-white font-semibold"
-                      style={{ background: `linear-gradient(135deg, ${current.primary}, ${current.secondary || current.primary})` }}>
-                      Get Started
+                  <div className="flex items-center gap-2 flex-shrink-0 pt-5">
+                    <label className="flex items-center gap-1 text-xs text-gray-600 cursor-pointer">
+                      <input type="checkbox" checked={m.isPage}
+                        onChange={e => setCustomMenus(ms => ms.map((x, j) => j === i ? { ...x, isPage: e.target.checked } : x))}/>
+                      Has content
+                    </label>
+                    <button onClick={() => setCustomMenus(ms => ms.filter((_, j) => j !== i))}
+                      className="p-1.5 rounded-lg hover:bg-red-50 text-red-400">
+                      <Trash2 className="w-4 h-4"/>
                     </button>
                   </div>
                 </div>
-
-                {/* Category cards */}
-                <div className="grid grid-cols-3 gap-1.5">
-                  {['💻 Tech', '📊 Data', '🎨 Design'].map(c => (
-                    <div key={c} className="rounded-lg border-2 p-2 text-center text-xs transition-all cursor-pointer"
-                      style={{ borderColor: `${current.primary}40` }}>
-                      <p className="font-medium text-gray-700">{c}</p>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Font sample */}
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-xs text-gray-400 mb-1">Font: {current.font}</p>
-                  <p className="font-bold text-sm text-gray-800" style={{ fontFamily: `'${current.font}', sans-serif` }}>
-                    The quick brown fox
-                  </p>
-                  <p className="text-xs text-gray-500" style={{ fontFamily: `'${current.font}', sans-serif` }}>
-                    Learn, grow and succeed with us
-                  </p>
-                </div>
-
-                <div className="flex gap-2">
-                  <div className="flex-1 h-2 rounded-full" style={{ background: current.primary }} />
-                  <div className="flex-1 h-2 rounded-full" style={{ background: current.secondary || current.primary }} />
-                  <div className="flex-1 h-2 rounded-full" style={{ background: (current as any).accent || current.primary }} />
-                </div>
+                {m.isPage && (
+                  <div>
+                    <label className="label text-xs">Page Content (HTML supported)</label>
+                    <textarea className="input resize-none font-mono text-xs" rows={4}
+                      placeholder="<p>Your page content here...</p>"
+                      value={m.pageContent ?? ''}
+                      onChange={e => setCustomMenus(ms => ms.map((x, j) => j === i ? { ...x, pageContent: e.target.value } : x))}/>
+                  </div>
+                )}
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'general' && (
-        <div className="card p-6 max-w-2xl space-y-4">
-          <div><label className="label">Organization Name *</label>
-            <input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
-          <div><label className="label">Tagline</label>
-            <input className="input" placeholder="Your inspiring tagline…" value={form.tagline} onChange={e => setForm(f => ({ ...f, tagline: e.target.value }))} /></div>
-          <div><label className="label">Website</label>
-            <input className="input" placeholder="https://yoursite.com" value={form.website} onChange={e => setForm(f => ({ ...f, website: e.target.value }))} /></div>
-          <div>
-            <label className="label flex items-center gap-2"><Link2 className="w-3.5 h-3.5" /> Portal URL</label>
-            <input className="input font-mono" placeholder="http://localhost:5173" value={form.portalUrl}
-              onChange={e => setForm(f => ({ ...f, portalUrl: e.target.value }))} />
-            <p className="text-xs text-gray-400 mt-1">The browser URL where your portal is hosted. Used for org identification on page load.</p>
-          </div>
-          <div><label className="label">Currency</label>
-            <select className="input" value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}>
-              <option value="INR">INR — Indian Rupee (₹)</option>
-              <option value="USD">USD — US Dollar ($)</option>
-              <option value="EUR">EUR — Euro (€)</option>
-              <option value="GBP">GBP — British Pound (£)</option>
-            </select>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'payment' && (
-        <div className="card p-6 max-w-2xl space-y-5">
-          <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4">
-            <span className="text-xl">💳</span>
-            <div>
-              <p className="text-sm font-semibold text-amber-800">Razorpay Payment Gateway</p>
-              <p className="text-xs text-amber-700 mt-0.5">Add your Razorpay keys to enable paid course purchases. Get keys from <a href="https://dashboard.razorpay.com" target="_blank" rel="noreferrer" className="underline">dashboard.razorpay.com</a></p>
-            </div>
-          </div>
-          <div><label className="label">Razorpay Key ID</label>
-            <input className="input font-mono" placeholder="rzp_live_xxxxxxxxxx" value={form.razorpayKeyId}
-              onChange={e => setForm(f => ({ ...f, razorpayKeyId: e.target.value }))} /></div>
-          <div><label className="label">Razorpay Key Secret</label>
-            <input className="input font-mono" type="password" placeholder="Your secret key" value={form.razorpayKeySecret}
-              onChange={e => setForm(f => ({ ...f, razorpayKeySecret: e.target.value }))} />
-            <p className="text-xs text-gray-400 mt-1">Stored securely. Never shared with frontend.</p>
-          </div>
-          <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-600 space-y-1">
-            <p className="font-semibold text-gray-700 mb-2">Supported Payment Methods via Razorpay:</p>
-            {['UPI (Google Pay, PhonePe, Paytm)','Credit & Debit Cards','Net Banking','EMI','Wallets'].map(m => (
-              <div key={m} className="flex items-center gap-2"><span className="text-green-500">✓</span>{m}</div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ── Enquiries tab ── */}
+      {tab === 'enquiries' && (
+        <div className="card overflow-hidden">
+          <div className="p-5 border-b border-gray-100">
+            <h3 className="font-bold text-gray-900">Batch Enquiries</h3>
+            <p className="text-sm text-gray-500 mt-0.5">People who submitted enquiries from your homepage</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-gray-400 uppercase border-b border-gray-100">
+                  <th className="px-5 py-3 text-left">Name</th>
+                  <th className="px-5 py-3 text-left">Phone</th>
+                  <th className="px-5 py-3 text-left">Email</th>
+                  <th className="px-5 py-3 text-left">Interested In</th>
+                  <th className="px-5 py-3 text-left">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {(enquiries as any[]).length === 0 ? (
+                  <tr><td colSpan={5} className="px-5 py-10 text-center text-gray-400">No enquiries yet</td></tr>
+                ) : (enquiries as any[]).map((e: any) => (
+                  <tr key={e.id} className="hover:bg-gray-50">
+                    <td className="px-5 py-3 font-medium text-gray-800">{e.name}</td>
+                    <td className="px-5 py-3 text-gray-600"><a href={`tel:${e.phone}`} className="hover:underline">{e.phone}</a></td>
+                    <td className="px-5 py-3 text-gray-600">{e.email ?? '—'}</td>
+                    <td className="px-5 py-3 text-gray-600">{e.batchName ?? e.courseInterest ?? '—'}</td>
+                    <td className="px-5 py-3 text-gray-400 text-xs">
+                      {new Date(e.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Save button at bottom */}
+      {tab !== 'enquiries' && (
+        <div className="flex justify-end pt-2">
+          <button className="btn-primary px-8" onClick={save} disabled={saving}>
+            {saving ? <><Loader2 className="w-4 h-4 animate-spin"/> Saving…</> : <><Save className="w-4 h-4"/> Save Settings</>}
+          </button>
         </div>
       )}
     </div>

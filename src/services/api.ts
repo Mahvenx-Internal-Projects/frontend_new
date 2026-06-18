@@ -246,3 +246,15 @@ export const interviewApi = {
   update:         (id: number, d: object) => api.put(`/interviews/${id}`, d),
   delete:         (id: number) => api.delete(`/interviews/${id}`),
 };
+
+export const batchApi = {
+  getAll:          (orgId: number)               => api.get('/batches', { params: { orgId } }),
+  get:             (id: number)                  => api.get(`/batches/${id}`),
+  create:          (d: object)                   => api.post('/batches', d),
+  update:          (id: number, d: object)       => api.put(`/batches/${id}`, d),
+  delete:          (id: number)                  => api.delete(`/batches/${id}`),
+  getActive:       (orgId: number)               => api.get('/batches/active', { params: { orgId } }),
+  addStudent:      (batchId: number, d: object)  => api.post(`/batches/${batchId}/students`, d),
+  removeStudent:   (batchId: number, sid: number)=> api.delete(`/batches/${batchId}/students/${sid}`),
+  updatePayment:   (batchId: number, sid: number, d: object) => api.put(`/batches/${batchId}/students/${sid}/payment`, d),
+};

@@ -22,6 +22,7 @@ import HomePageEditorPage   from './pages/admin/HomePageEditorPage';
 import PaymentTransactionsPage from './pages/admin/PaymentTransactionsPage';
 import LessonEditorPage     from './pages/admin/LessonEditorPage';
 import MockTestEditorPage   from './pages/admin/MockTestEditorPage';
+import TrainingBatchPage    from './pages/admin/TrainingBatchPage';
 
 // Trainer
 import TrainerDashboard     from './pages/trainer/TrainerDashboard';
@@ -126,7 +127,8 @@ export default function App() {
               <Route path="cart"         element={<CartPage />} />
               <Route path="orders"       element={<OrdersPage />} />
               <Route path="certificates" element={<MyCertificates />} />
-              <Route path="live-classes" element={<TrainingSchedulePage />} />
+              <Route path="live-classes"      element={<TrainingSchedulePage />} />
+              <Route path="training-batches" element={<TrainingBatchPage />} />
               <Route path="interviews"   element={<InterviewSchedulePage />} />
             </Route>
 
