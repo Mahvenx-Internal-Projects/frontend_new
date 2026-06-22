@@ -23,6 +23,7 @@ interface UploadState {
   error: string;
   fileName: string;
   fileSize: string;
+  serverProcessing: boolean; // true once all bytes are sent, waiting on server response
 }
 
 function fmtSize(bytes: number) {
@@ -46,21 +47,27 @@ const ICON: Record<UploadType, React.ReactNode> = {
 
 export default function FileUpload({ type, folder, onUploaded, onError, accept, label, currentUrl, className }: Props) {
   const [state, setState] = useState<UploadState>({
-    status: 'idle', progress: 0, url: currentUrl || '', error: '', fileName: '', fileSize: '',
+    status: 'idle', progress: 0, url: currentUrl || '', error: '', fileName: '', fileSize: '', serverProcessing: false,
   });
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const xhrRef   = useRef<XMLHttpRequest | null>(null);
 
-  const upload = useCallback(async (file: File) => {
-    setState(s => ({ ...s, status: 'uploading', progress: 0, error: '', fileName: file.name, fileSize: fmtSize(file.size) }));
+  // Files at or above this size skip FormData entirely for video uploads.
+  // Wrapping a large File in FormData requires the browser to fully read
+  // it into memory before it can build the multipart body and start
+  // sending — for a 250MB+ file that shows up as the progress bar sitting
+  // at 0% with no network request visible yet, even though nothing is
+  // actually broken. Sending the raw file as the literal POST body lets
+  // the browser begin streaming bytes as it reads them instead.
+  const RAW_STREAM_THRESHOLD = 50 * 1024 * 1024; // 50MB
 
-    const formData = new FormData();
-    formData.append('file', file);
+  const upload = useCallback(async (file: File) => {
+    setState(s => ({ ...s, status: 'uploading', progress: 0, error: '', fileName: file.name, fileSize: fmtSize(file.size), serverProcessing: false }));
 
     const token = localStorage.getItem('lms_token');
+    const useRawStream = type === 'video' && file.size >= RAW_STREAM_THRESHOLD;
 
-    // Use XHR for upload progress (axios onUploadProgress works too but XHR is cleaner)
     const xhr = new XMLHttpRequest();
     xhrRef.current = xhr;
 
@@ -69,6 +76,16 @@ export default function FileUpload({ type, folder, onUploaded, onError, accept, 
         const pct = Math.round((e.loaded / e.total) * 100);
         setState(s => ({ ...s, progress: pct }));
       }
+    });
+
+    // The browser reports 100% the instant the last byte has been
+    // TRANSMITTED — but xhr.onload doesn't fire until the server has
+    // finished writing the file to R2 and sent its response. For large
+    // files this gap can be noticeable, and "Uploading… 100%" sitting
+    // still looks frozen. Track that we've hit 100% so the UI can switch
+    // to a "finishing up on the server" message instead.
+    xhr.upload.addEventListener('load', () => {
+      setState(s => ({ ...s, progress: 100, serverProcessing: true }));
     });
 
     const result = await new Promise<{ url: string; key: string } | null>((resolve) => {
@@ -94,24 +111,35 @@ export default function FileUpload({ type, folder, onUploaded, onError, accept, 
         resolve(null);
       };
       xhr.onabort = () => {
-        setState(s => ({ ...s, status: 'idle', progress: 0, fileName: '', fileSize: '' }));
+        setState(s => ({ ...s, status: 'idle', progress: 0, fileName: '', fileSize: '', serverProcessing: false }));
         resolve(null);
       };
 
-     // Use API URL from environment (same as all other APIs)
-const apiBaseUrl =
-  (import.meta.env.VITE_API_URL || '')
-    .replace(/\/$/, '')
-    .replace(/\/api$/, '');
+      // Use API URL from environment (same as all other APIs)
+      const apiBaseUrl =
+        (import.meta.env.VITE_API_URL || '')
+          .replace(/\/$/, '')
+          .replace(/\/api$/, '');
 
-const endpoint =
-  `${apiBaseUrl}/api/upload/${type}${folder ? `?folder=${encodeURIComponent(folder)}` : ''}`;
-
-console.log('Upload Endpoint:', endpoint);
-
-xhr.open('POST', endpoint);
-      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-      xhr.send(formData);
+      if (useRawStream) {
+        // Large video: send the raw File object directly as the request
+        // body. No FormData wrapping, so the browser doesn't need to read
+        // the whole file into memory first — it streams straight from disk.
+        const endpoint =
+          `${apiBaseUrl}/api/upload/video/stream?folder=${encodeURIComponent(folder ?? 'videos')}&fileName=${encodeURIComponent(file.name)}`;
+        xhr.open('POST', endpoint);
+        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+        xhr.send(file);
+      } else {
+        const formData = new FormData();
+        formData.append('file', file);
+        const endpoint =
+          `${apiBaseUrl}/api/upload/${type}${folder ? `?folder=${encodeURIComponent(folder)}` : ''}`;
+        xhr.open('POST', endpoint);
+        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.send(formData);
+      }
     });
 
     if (result) {
@@ -137,7 +165,7 @@ xhr.open('POST', endpoint);
   };
 
   const reset = () => {
-    setState({ status: 'idle', progress: 0, url: '', error: '', fileName: '', fileSize: '' });
+    setState({ status: 'idle', progress: 0, url: '', error: '', fileName: '', fileSize: '', serverProcessing: false });
     if (inputRef.current) inputRef.current.value = '';
   };
 
@@ -219,10 +247,17 @@ xhr.open('POST', endpoint);
                 <div className="flex justify-between text-xs text-gray-500">
                   <span className="flex items-center gap-1">
                     <Loader2 className="w-3 h-3 animate-spin" />
-                    Uploading…
+                    {state.serverProcessing
+                      ? 'Upload complete — finishing up on the server…'
+                      : 'Uploading…'}
                   </span>
                   <span className="font-semibold" style={{ color: p }}>{state.progress}%</span>
                 </div>
+                {state.serverProcessing && (
+                  <p className="text-xs text-gray-400">
+                    Your file has fully reached our server — it's now being saved to storage. This can take a little longer for large videos.
+                  </p>
+                )}
               </div>
             </>
           )}

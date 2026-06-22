@@ -62,8 +62,8 @@ const navByRole: Record<string, NavItem[]> = {
 
 const canViewAs: Record<string, string[]> = {
   SuperAdmin: ['SuperAdmin','OrgAdmin','Instructor','Student'],
-  OrgAdmin:   ['OrgAdmin','Instructor','Student'],
-  Instructor: ['Instructor','Student'],
+  OrgAdmin:   ['OrgAdmin'],
+  Instructor: ['Instructor'],
   Student:    ['Student'],
 };
 

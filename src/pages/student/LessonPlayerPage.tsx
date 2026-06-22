@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronLeft, ChevronRight, CheckCircle2, Download,
   FileText, Music, Film, BookOpen, Menu, X, Clock,
-  PlayCircle, BarChart3, Award, Timer, AlertCircle
+  PlayCircle, BarChart3, Award, Timer, AlertCircle, Lock
 } from 'lucide-react';
 import api from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
@@ -54,9 +54,10 @@ function fmtBytes(b: number) {
 }
 
 // ─── Individual block renderers ────────────────────────────────
-function BlockRenderer({ block, onVideoTime }: {
+function BlockRenderer({ block, onVideoTime, resumeFrom }: {
   block: Block;
   onVideoTime?: (cur: number, dur: number) => void;
+  resumeFrom?: number;
 }) {
   switch (block.type) {
     case 'Heading': {
@@ -98,6 +99,7 @@ function BlockRenderer({ block, onVideoTime }: {
             src={block.videoUrl ?? ''}
             title={block.videoTitle}
             onTimeUpdate={onVideoTime}
+            resumeFrom={resumeFrom}
             className="rounded-2xl shadow-xl"
           />
         </div>
@@ -272,6 +274,14 @@ export default function LessonPlayerPage() {
     enabled: !!courseId && !!user?.id,
   });
 
+  // Saved progress for the CURRENT lesson — used to resume video playback
+  // from where the student left off and to seed the on-screen watch
+  // counter with prior sessions' total instead of starting at 0. Declared
+  // here (right after progressData loads) since several effects below
+  // reference it before the component's later render logic runs.
+  const currentLessonProgress = (progressData as any[]).find((p: any) => p.lessonId === Number(lessonId));
+  const resumeFromSecs = currentLessonProgress?.lastPositionSec ?? 0;
+
   // Fetch course modules+lessons for sidebar (better approach)
   const { data: courseDetail } = useQuery({
     queryKey: ['course-play-detail', courseId],
@@ -288,14 +298,61 @@ export default function LessonPlayerPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['lesson-progress'] }),
   });
 
-  // Auto-save progress every 15 seconds
+  // Reset watch state whenever the lesson changes (Next/Prev navigation,
+  // sidebar clicks). Without this, leftover watchedSecs from the PREVIOUS
+  // lesson would get attached to the new lesson's first save tick — e.g.
+  // finishing a 200s lesson and clicking Next would briefly report the new
+  // lesson as "200s watched" before its own video had even started.
+  useEffect(() => {
+    setWatchedSecs(0);
+    setVideoCurrentTime(0);
+    setCompleted(false);
+    lastSavedSecsRef.current = 0;
+    sessionStartPositionRef.current = null;
+  }, [lessonId]);
+
+  // Once the saved progress for this lesson is available, seed the
+  // on-screen counter and completion state from it — so re-opening a
+  // lesson shows the TRUE accumulated watch time immediately (e.g. "2m
+  // watched" from a previous session) instead of starting at 0 and only
+  // climbing back up as the new session plays. lastSavedSecsRef is set to
+  // the same value so the next delta calculation is correct (it won't
+  // re-send the already-saved seconds as a new delta).
+  useEffect(() => {
+    if (!currentLessonProgress) return;
+    const savedSecs = currentLessonProgress.watchedSeconds ?? 0;
+    setWatchedSecs(savedSecs);
+    lastSavedSecsRef.current = savedSecs;
+    if (currentLessonProgress.isCompleted) setCompleted(true);
+  }, [currentLessonProgress?.lessonId]);
+
+  // Tracks how much of the CURRENT session's watchedSecs has already been
+  // sent to the server. Only the forward difference (delta) since the last
+  // successful save is POSTed each time — the backend just adds that delta
+  // onto its stored total, so re-opening a lesson in a brand new session
+  // correctly ADDS to previous watch time instead of overwriting it. No
+  // database schema change needed: this bookkeeping lives entirely here.
+  const lastSavedSecsRef = useRef(0);
+
+  // Records the video's playback position at the moment THIS session
+  // started watching (i.e. where it resumed from). Needed because the
+  // player reports raw playback position (e.g. "you are at 1:00 in the
+  // video"), but watchedSecs must represent TOTAL accumulated watch time
+  // across all sessions — so we track how far the position has advanced
+  // since resume, not the raw position itself.
+  const sessionStartPositionRef = useRef<number | null>(null);
+
+  // Auto-save progress every 15 seconds — sends only the delta watched
+  // since the last save, not the full session-local watchedSecs.
   useEffect(() => {
     if (!lessonId) return;
     saveRef.current = setInterval(() => {
-      if (watchedSecs > 0) {
+      const delta = watchedSecs - lastSavedSecsRef.current;
+      if (delta > 0) {
+        lastSavedSecsRef.current = watchedSecs;
         progressMut.mutate({
           isCompleted: completed,
-          watchedSeconds: watchedSecs,
+          watchedSeconds: delta,
           lastPositionSec: Math.round(videoCurrentTime),
         });
       }
@@ -303,18 +360,35 @@ export default function LessonPlayerPage() {
     return () => { if (saveRef.current) clearInterval(saveRef.current); };
   }, [watchedSecs, completed, videoCurrentTime, lessonId]);
 
-  // Save on unmount
+  // Save immediately whenever the lesson changes or the page is closed.
+  // Uses refs (always current) instead of the empty-deps closure bug that
+  // previously captured watchedSecs/completed/videoCurrentTime as their
+  // INITIAL values (0/false/0) forever, so navigating away never actually
+  // persisted the real final watch time for the lesson being left. Like the
+  // interval save above, this sends only the unsaved delta.
+  const watchedSecsRef = useRef(watchedSecs);
+  const completedRef = useRef(completed);
+  const videoCurrentTimeRef = useRef(videoCurrentTime);
+  useEffect(() => { watchedSecsRef.current = watchedSecs; }, [watchedSecs]);
+  useEffect(() => { completedRef.current = completed; }, [completed]);
+  useEffect(() => { videoCurrentTimeRef.current = videoCurrentTime; }, [videoCurrentTime]);
+
   useEffect(() => {
+    // Runs on lessonId change (cleanup of the PREVIOUS lesson's effect)
+    // and on final component unmount (browser close / route away from /learn).
     return () => {
-      if (watchedSecs > 0) {
-        progressMut.mutate({
-          isCompleted: completed,
-          watchedSeconds: watchedSecs,
-          lastPositionSec: Math.round(videoCurrentTime),
-        });
+      const delta = watchedSecsRef.current - lastSavedSecsRef.current;
+      if (delta > 0) {
+        lastSavedSecsRef.current = watchedSecsRef.current;
+        api.post('/lessons/progress', {
+          lessonId: Number(lessonId),
+          isCompleted: completedRef.current,
+          watchedSeconds: delta,
+          lastPositionSec: Math.round(videoCurrentTimeRef.current),
+        }).catch(() => { /* best-effort on unmount, ignore failures */ });
       }
     };
-  }, []);
+  }, [lessonId]);
 
   // Track wall-clock time for non-video lessons (text/audio/PDF)
   const hasVideo = (lesson?.contentBlocks ?? []).some((b: Block) => b.type === 'Video');
@@ -324,20 +398,64 @@ export default function LessonPlayerPage() {
     return () => clearInterval(timer);
   }, [hasVideo, lesson]);
 
+  // Heartbeat for video lessons: VideoPlayer's onTimeUpdate is the source of
+  // truth for actual playback position, but if it ever stalls (slow network,
+  // a player edge-case, tab backgrounded mid-load) this keeps the on-screen
+  // counter visibly ticking rather than looking permanently frozen at 0.
+  // It only nudges the counter forward by small amounts and only while the
+  // lesson isn't yet complete — handleVideoTime always overwrites it with
+  // the real position the moment the player reports one.
+  const [playerReporting, setPlayerReporting] = useState(false);
+  useEffect(() => {
+    if (!hasVideo || !lesson || completed) return;
+    const timer = setInterval(() => {
+      // Only tick the fallback if the real player hasn't reported in the
+      // last 3 seconds — avoids double-counting when it's working fine.
+      if (!playerReporting) setWatchedSecs(s => s + 1);
+      setPlayerReporting(false);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [hasVideo, lesson, completed, playerReporting]);
+
   // Video time update
   const handleVideoTime = useCallback((cur: number, dur: number) => {
+    setPlayerReporting(true);
     setVideoCurrentTime(cur);
-    setWatchedSecs(Math.round(cur));
+
+    if (sessionStartPositionRef.current === null) {
+      // First time the player reports a position in this session — anchor
+      // here. Whatever resumeFromSecs the player started at counts as
+      // already-watched (it's in the saved total), so only forward
+      // progress past this point adds new watch time.
+      sessionStartPositionRef.current = cur;
+    }
+    const advancedInSession = Math.max(0, cur - sessionStartPositionRef.current);
+    const newTotal = (currentLessonProgress?.watchedSeconds ?? 0) + advancedInSession;
+    setWatchedSecs(Math.round(newTotal));
+
     // Mark complete at 80%
     if (!completed && dur > 0 && cur / dur >= 0.8) {
       setCompleted(true);
-      progressMut.mutate({ isCompleted: true, watchedSeconds: Math.round(cur), lastPositionSec: Math.round(cur) });
+      const roundedTotal = Math.round(newTotal);
+      const delta = roundedTotal - lastSavedSecsRef.current;
+      if (delta > 0) {
+        lastSavedSecsRef.current = roundedTotal;
+        progressMut.mutate({ isCompleted: true, watchedSeconds: delta, lastPositionSec: Math.round(cur) });
+      }
     }
-  }, [completed]);
+  }, [completed, currentLessonProgress?.watchedSeconds]);
 
   const markComplete = () => {
     setCompleted(true);
-    progressMut.mutate({ isCompleted: true, watchedSeconds: watchedSecs, lastPositionSec: Math.round(videoCurrentTime) });
+    const delta = watchedSecs - lastSavedSecsRef.current;
+    if (delta > 0) {
+      lastSavedSecsRef.current = watchedSecs;
+      progressMut.mutate({ isCompleted: true, watchedSeconds: delta, lastPositionSec: Math.round(videoCurrentTime) });
+    } else {
+      // Already fully saved up to this point — still need to flip
+      // isCompleted server-side even though there's no new time to add.
+      progressMut.mutate({ isCompleted: true, watchedSeconds: 0, lastPositionSec: Math.round(videoCurrentTime) });
+    }
   };
 
   if (isLoading) return (
@@ -352,6 +470,16 @@ export default function LessonPlayerPage() {
   const blocks: Block[] = [...(lesson?.contentBlocks ?? [])].sort((a: Block, b: Block) => a.order - b.order);
   const totalLessonSecs = lesson?.durationSecs ?? 0;
 
+  // Mandatory watch-time gate: the student must have watched/spent at least
+  // 80% of the lesson's duration before "Mark Done" becomes clickable. This
+  // mirrors the auto-complete threshold for videos so manual completion
+  // can't be used to skip required content. Lessons with no set duration
+  // (durationSecs == 0) have no gate — nothing to enforce against.
+  const REQUIRED_PCT = 0.8;
+  const requiredSecs = totalLessonSecs > 0 ? Math.ceil(totalLessonSecs * REQUIRED_PCT) : 0;
+  const meetsWatchRequirement = totalLessonSecs === 0 || watchedSecs >= requiredSecs;
+  const secsRemaining = Math.max(0, requiredSecs - watchedSecs);
+
   // Build flat lessons list from courseDetail modules
   const allModules: any[] = courseDetail?.modules ?? [];
   const flatLessons: any[] = allModules.flatMap((m: any) => (m.lessons ?? []).map((l: any) => ({ ...l, moduleName: m.title })));
@@ -361,6 +489,24 @@ export default function LessonPlayerPage() {
   const currentIdx = flatLessons.findIndex(l => String(l.id) === lessonId);
   const prev = currentIdx > 0 ? flatLessons[currentIdx - 1] : null;
   const next = currentIdx < flatLessons.length - 1 ? flatLessons[currentIdx + 1] : null;
+
+  const sequentialLockEnabled = !!courseDetail?.enforceSequentialLessons;
+
+  // A lesson at a given flatLessons index is locked if sequential mode is
+  // on AND any earlier lesson in the course hasn't been completed yet.
+  // The currently-open lesson and anything before it are always
+  // reachable — only lessons strictly ahead of the first incomplete one
+  // get locked.
+  const isLessonLocked = (idx: number): boolean => {
+    if (!sequentialLockEnabled) return false;
+    for (let i = 0; i < idx; i++) {
+      const lp = progressMap[flatLessons[i]?.id];
+      const isCurrentlyOpenAndDone = String(flatLessons[i]?.id) === lessonId && completed;
+      if (!lp?.isCompleted && !isCurrentlyOpenAndDone) return true;
+    }
+    return false;
+  };
+  const nextLocked = next ? isLessonLocked(currentIdx + 1) : false;
 
   // Session stats
   const sessionMins = Math.round((Date.now() - sessionStart) / 60000);
@@ -399,9 +545,29 @@ export default function LessonPlayerPage() {
               <h1 className="text-xl font-black text-gray-900 leading-tight">{lesson?.title}</h1>
               {lesson?.description && <div className="text-sm text-gray-500 mt-1 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: lesson.description }} />}
             </div>
-            <button className="lg:hidden btn-ghost flex-shrink-0" onClick={() => setSidebarOpen(!sidebarOpen)}>
-              {sidebarOpen ? <X className="w-5 h-5"/> : <Menu className="w-5 h-5"/>}
-            </button>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Exit — saves current progress, then returns to the course
+                  detail page (falls back to My Courses if courseId is
+                  somehow missing). */}
+              <button
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300 text-sm font-semibold transition-colors"
+                onClick={() => {
+                  if (watchedSecsRef.current > 0) {
+                    api.post('/lessons/progress', {
+                      lessonId: Number(lessonId),
+                      isCompleted: completedRef.current,
+                      watchedSeconds: watchedSecsRef.current,
+                      lastPositionSec: Math.round(videoCurrentTimeRef.current),
+                    }).catch(() => { /* best-effort, navigate regardless */ });
+                  }
+                  navigate(courseId ? `/dashboard/catalog/${courseId}` : '/dashboard/my-courses');
+                }}>
+                <ChevronLeft className="w-4 h-4"/> Exit
+              </button>
+              <button className="lg:hidden btn-ghost flex-shrink-0" onClick={() => setSidebarOpen(!sidebarOpen)}>
+                {sidebarOpen ? <X className="w-5 h-5"/> : <Menu className="w-5 h-5"/>}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -424,7 +590,8 @@ export default function LessonPlayerPage() {
           ) : (
             blocks.map((b, i) => (
               <BlockRenderer key={i} block={b}
-                onVideoTime={b.type === 'Video' ? handleVideoTime : undefined} />
+                onVideoTime={b.type === 'Video' ? handleVideoTime : undefined}
+                resumeFrom={b.type === 'Video' ? resumeFromSecs : undefined} />
             ))
           )}
         </div>
@@ -489,23 +656,31 @@ export default function LessonPlayerPage() {
           </button>
 
           {!completed && (
-            <button className="flex items-center gap-2 px-4 py-3 rounded-2xl border-2 border-green-300 bg-green-50 text-green-700 font-semibold text-sm hover:bg-green-100 transition-all flex-shrink-0"
-              onClick={markComplete}>
-              <CheckCircle2 className="w-4 h-4"/> Mark Done
+            <button
+              className={clsx('flex items-center gap-2 px-4 py-3 rounded-2xl border-2 font-semibold text-sm transition-all flex-shrink-0',
+                meetsWatchRequirement
+                  ? 'border-green-300 bg-green-50 text-green-700 hover:bg-green-100'
+                  : 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed')}
+              onClick={markComplete}
+              disabled={!meetsWatchRequirement}
+              title={meetsWatchRequirement ? '' : `Watch ${fmtTime(secsRemaining)} more to unlock`}>
+              <CheckCircle2 className="w-4 h-4"/>
+              {meetsWatchRequirement ? 'Mark Done' : `Watch ${fmtTime(secsRemaining)} more`}
             </button>
           )}
 
           <button
             className={clsx('flex items-center gap-2 px-4 py-3 rounded-2xl font-semibold text-sm transition-all flex-1 justify-end',
-              next ? 'text-white shadow-md hover:shadow-lg hover:scale-[1.01]' : 'bg-gray-100 text-gray-300 cursor-not-allowed')}
-            style={next ? { background: 'linear-gradient(135deg,var(--org-primary),var(--org-secondary))' } : {}}
-            disabled={!next}
-            onClick={() => next && navigate(`/learn/${courseId}/lesson/${next.id}`)}>
+              next && !nextLocked ? 'text-white shadow-md hover:shadow-lg hover:scale-[1.01]' : 'bg-gray-100 text-gray-300 cursor-not-allowed')}
+            style={next && !nextLocked ? { background: 'linear-gradient(135deg,var(--org-primary),var(--org-secondary))' } : {}}
+            disabled={!next || nextLocked}
+            title={nextLocked ? 'Complete this lesson to unlock the next one' : ''}
+            onClick={() => next && !nextLocked && navigate(`/learn/${courseId}/lesson/${next.id}`)}>
             <div className="text-right min-w-0">
-              <p className="text-xs opacity-70">Next</p>
+              <p className="text-xs opacity-70">{nextLocked ? 'Locked' : 'Next'}</p>
               <p className="truncate max-w-[140px]">{next?.title ?? '—'}</p>
             </div>
-            <ChevronRight className="w-4 h-4 flex-shrink-0"/>
+            {nextLocked ? <Lock className="w-4 h-4 flex-shrink-0"/> : <ChevronRight className="w-4 h-4 flex-shrink-0"/>}
           </button>
         </div>
       </div>
@@ -551,11 +726,16 @@ export default function LessonPlayerPage() {
                   const isActive = String(l.id) === lessonId;
                   const prog = progressMap[l.id];
                   const isDone = prog?.isCompleted || (isActive && completed);
+                  const globalIdx = flatLessons.findIndex((fl: any) => fl.id === l.id);
+                  const isLocked = isLessonLocked(globalIdx);
                   return (
                     <button key={l.id}
-                      onClick={() => navigate(`/learn/${courseId}/lesson/${l.id}`)}
+                      onClick={() => !isLocked && navigate(`/learn/${courseId}/lesson/${l.id}`)}
+                      disabled={isLocked}
+                      title={isLocked ? 'Complete earlier lessons to unlock' : ''}
                       className={clsx(
                         'w-full flex items-start gap-3 px-4 py-3 text-left border-b border-gray-50 transition-all',
+                        isLocked ? 'opacity-50 cursor-not-allowed' :
                         isActive
                           ? 'bg-[var(--org-primary)]/8 border-r-[3px] border-r-[var(--org-primary)]'
                           : 'hover:bg-gray-50'
@@ -563,9 +743,10 @@ export default function LessonPlayerPage() {
                       {/* Status circle */}
                       <div className={clsx('w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5 transition-all',
                         isDone ? 'bg-green-500 text-white' :
+                        isLocked ? 'bg-gray-200 text-gray-400' :
                         isActive ? 'text-white' : 'bg-gray-100 text-gray-500')}
-                        style={isActive && !isDone ? { background: 'var(--org-primary)' } : {}}>
-                        {isDone ? <CheckCircle2 className="w-3.5 h-3.5"/> : (mi === 0 ? li + 1 : li + 1)}
+                        style={isActive && !isDone && !isLocked ? { background: 'var(--org-primary)' } : {}}>
+                        {isDone ? <CheckCircle2 className="w-3.5 h-3.5"/> : isLocked ? <Lock className="w-3 h-3"/> : li+1}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className={clsx('text-xs font-semibold leading-snug line-clamp-2',

@@ -6,6 +6,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useOrgStore } from '../../store/orgStore';
 import { uploadApi } from '../../services/api';
 import clsx from 'clsx';
+import { AboutUsTemplatePicker, ContactUsTemplatePicker } from './TemplatePicker';
 
 const API_BASE = typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
@@ -255,8 +256,26 @@ export default function OrgSettingsPage() {
         <div className="space-y-5">
           {/* About Us */}
           <div className="card p-6 space-y-4">
-            <h3 className="font-bold text-gray-900">About Us Content</h3>
-            <p className="text-xs text-gray-500">This content appears in the About Us section of your homepage. Supports HTML.</p>
+            <h3 className="font-bold text-gray-900">About Us</h3>
+
+            <AboutUsTemplatePicker
+              value={form.aboutUsTemplate ?? 'classic'}
+              onChange={(v) => f('aboutUsTemplate', v)}
+              primary={form.primaryColor ?? '#6366f1'}
+            />
+
+            <div className="flex items-center justify-between p-3 rounded-xl border border-gray-100 bg-gray-50">
+              <div>
+                <p className="text-sm font-semibold text-gray-800">Show logo in About Us section</p>
+                <p className="text-xs text-gray-500">Displays your organization logo above the content</p>
+              </div>
+              <button onClick={() => tog('showLogoInAboutUs')}
+                className={clsx('w-12 h-6 rounded-full transition-colors relative', form.showLogoInAboutUs !== false ? 'bg-green-500' : 'bg-gray-300')}>
+                <span className={clsx('absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform', form.showLogoInAboutUs !== false ? 'translate-x-7' : 'translate-x-1')}/>
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-500 pt-1">Write your About Us content below. Supports HTML.</p>
             <textarea className="input resize-none font-mono text-xs" rows={8}
               placeholder="<p>We are a leading training institution...</p>"
               value={form.aboutUsContent ?? ''} onChange={e => f('aboutUsContent', e.target.value)}/>
@@ -279,7 +298,26 @@ export default function OrgSettingsPage() {
 
           {/* Contact */}
           <div className="card p-6 space-y-4">
-            <h3 className="font-bold text-gray-900">Contact Information</h3>
+            <h3 className="font-bold text-gray-900">Contact Us</h3>
+
+            <ContactUsTemplatePicker
+              value={form.contactUsTemplate ?? 'classic'}
+              onChange={(v) => f('contactUsTemplate', v)}
+              primary={form.primaryColor ?? '#6366f1'}
+            />
+
+            <div className="flex items-center justify-between p-3 rounded-xl border border-gray-100 bg-gray-50">
+              <div>
+                <p className="text-sm font-semibold text-gray-800">Show logo in Contact Us section</p>
+                <p className="text-xs text-gray-500">Displays your organization logo near contact details</p>
+              </div>
+              <button onClick={() => tog('showLogoInContactUs')}
+                className={clsx('w-12 h-6 rounded-full transition-colors relative', form.showLogoInContactUs !== false ? 'bg-green-500' : 'bg-gray-300')}>
+                <span className={clsx('absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform', form.showLogoInContactUs !== false ? 'translate-x-7' : 'translate-x-1')}/>
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-500 pt-1">Fill in your contact details below.</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="label flex items-center gap-1"><Phone className="w-3 h-3"/> Phone</label>

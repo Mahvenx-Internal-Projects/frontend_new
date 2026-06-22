@@ -16,7 +16,11 @@ export default function OrgGate({ children }: Props) {
       .then(r => {
         if (r.data.authorized) {
           const o = r.data.organization;
+          // Spread the FULL organization object so every field
+          // (including homepage feature flags + content) reaches
+          // the store — not just the hand-picked subset below.
           setOrg({
+            ...o,
             id:             o.id,
             name:           o.name,
             slug:           o.slug,
@@ -29,6 +33,23 @@ export default function OrgGate({ children }: Props) {
             themeFont:      o.themeFont      || 'Poppins',
             website:        o.website,
             portalUrl:      o.portalUrl,
+            // Homepage feature flags (now preserved)
+            showScrollingBanner: o.showScrollingBanner,
+            scrollingBannerText: o.scrollingBannerText,
+            showReferralOffer:   o.showReferralOffer,
+            referralOfferText:   o.referralOfferText,
+            showCourseBatches:   o.showCourseBatches,
+            showAllCourses:      o.showAllCourses,
+            showContactUs:       o.showContactUs,
+            showAboutUs:         o.showAboutUs,
+            showOpenings:        o.showOpenings,
+            aboutUsContent:      o.aboutUsContent,
+            contactEmail:        o.contactEmail,
+            contactPhone:        o.contactPhone,
+            contactAddress:      o.contactAddress,
+            contactMapEmbed:     o.contactMapEmbed,
+            openingsContent:     o.openingsContent,
+            customMenuJson:      o.customMenuJson,
           });
         } else {
           setUnauthorized(r.data.message || 'Not authorized');

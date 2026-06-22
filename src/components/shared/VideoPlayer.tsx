@@ -53,10 +53,13 @@ function YouTubePlayer({ videoId, title, className, resumeFrom = 0 }: {
 }) {
   const [loading, setLoading] = useState(true);
   const start = resumeFrom > 0 ? `&start=${Math.floor(resumeFrom)}` : '';
-  // youtube-nocookie avoids the "Video unavailable" / consent blocks on embeds
+  // youtube-nocookie avoids the "Video unavailable" / consent blocks on embeds.
+  // YouTube's own autoplay policy requires mute=1 for autoplay=1 to work at
+  // all in an iframe — there's no unmuted-autoplay path for embeds, unlike
+  // native <video>. Students can unmute via the player's own volume control.
   const embedUrl =
     `https://www.youtube-nocookie.com/embed/${videoId}` +
-    `?rel=0&modestbranding=1&enablejsapi=0&playsinline=1${start}`;
+    `?rel=0&modestbranding=1&enablejsapi=0&playsinline=1&autoplay=1&mute=1${start}`;
 
   return (
     <div className={clsx('relative bg-black rounded-2xl overflow-hidden', className)}
@@ -77,6 +80,11 @@ function YouTubePlayer({ videoId, title, className, resumeFrom = 0 }: {
         onLoad={() => setLoading(false)}
         style={{ border: 'none' }}
       />
+      {!loading && (
+        <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/60 text-white text-xs font-semibold pointer-events-none">
+          <VolumeX className="w-3.5 h-3.5"/> Use the player's volume control to unmute
+        </div>
+      )}
       {/* Fallback link in case embed is blocked */}
       <div className="absolute top-2 right-2 z-20">
         <a
@@ -112,7 +120,20 @@ function NativePlayer({ src, title, onTimeUpdate, onEnded, resumeFrom = 0, class
     const v = videoRef.current;
     if (!v) return;
     const handlers: [string, EventListener][] = [
-      ['loadedmetadata', () => { setDuration(v.duration); setLoading(false); if (resumeFrom > 0) v.currentTime = resumeFrom; }],
+      ['loadedmetadata', () => {
+        setDuration(v.duration);
+        setLoading(false);
+        if (resumeFrom > 0) v.currentTime = resumeFrom;
+        // Attempt autoplay as soon as metadata is ready. Browsers commonly
+        // block autoplay WITH sound, but allow it when muted — so try
+        // unmuted first, and if that promise rejects, retry muted instead
+        // of leaving the video sitting paused waiting for a manual click.
+        v.play().catch(() => {
+          v.muted = true;
+          setMuted(true);
+          v.play().catch(() => { /* still blocked — user must press play */ });
+        });
+      }],
       ['waiting',    () => setLoading(true)],
       ['canplay',    () => setLoading(false)],
       ['playing',    () => { setLoading(false); setPlaying(true); }],
@@ -197,6 +218,13 @@ function NativePlayer({ src, title, onTimeUpdate, onEnded, resumeFrom = 0, class
           <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center hover:bg-white/30 transition-all hover:scale-110">
             <Play className="w-10 h-10 text-white ml-1"/>
           </div>
+        </button>
+      )}
+
+      {playing && muted && (
+        <button onClick={toggleMute}
+          className="absolute top-3 left-3 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/60 text-white text-xs font-semibold hover:bg-black/80 transition-colors">
+          <VolumeX className="w-3.5 h-3.5"/> Tap to unmute
         </button>
       )}
 

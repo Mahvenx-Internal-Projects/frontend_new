@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Save, Eye, EyeOff, Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Globe, Layout } from 'lucide-react';
+import { Save, Eye, EyeOff, Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Globe, Layout, FileText, Phone } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { homePageApi } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
@@ -13,6 +13,7 @@ const TEMPLATES = [
   { id: 'bold',    name: 'Bold',     emoji: '💥', desc: 'Magazine-style, strong typography' },
   { id: 'minimal', name: 'Minimal',  emoji: '⬜', desc: 'Clean whitespace, elegant' },
   { id: 'dark',    name: 'Dark',     emoji: '🌙', desc: 'Premium dark with glass effects' },
+  { id: 'lumen',   name: 'Lumen',    emoji: '✨', desc: 'SaaS-style hero, mobile app promo, soft gradients' },
 ];
 
 const SECTION_LABELS: Record<string, string> = {
@@ -24,6 +25,13 @@ const SECTION_LABELS: Record<string, string> = {
 };
 
 const SOCIAL_PLATFORMS = ['youtube', 'instagram', 'twitter', 'facebook', 'linkedin', 'whatsapp', 'telegram'];
+
+// Built-in pages that can be quick-added to the nav. These are real routes
+// (see App.tsx) backed by Org Settings content — not anchors on this page.
+const QUICK_PAGES = [
+  { label: 'About Us',   url: '/about',   icon: FileText },
+  { label: 'Contact Us', url: '/contact', icon: Phone },
+];
 
 export default function HomePageEditorPage() {
   const { user } = useAuthStore();
@@ -115,6 +123,15 @@ export default function HomePageEditorPage() {
     [next[idx], next[target]] = [next[target], next[idx]];
     next.forEach((s, i) => { s.order = i + 1; });
     setSections(next);
+  };
+
+  const addQuickPage = (page: { label: string; url: string }) => {
+    if (navLinks.some(l => l.url === page.url)) {
+      toast.error(`${page.label} is already in the nav`);
+      return;
+    }
+    setNavLinks(prev => [...prev, { label: page.label, url: page.url }]);
+    toast.success(`${page.label} added to navigation`);
   };
 
   type TabId = 'template'|'hero'|'sections'|'nav'|'footer'|'custom';
@@ -282,25 +299,58 @@ export default function HomePageEditorPage() {
 
       {/* ─── NAVIGATION ────────────────────────────────────────── */}
       {activeTab === 'nav' && (
-        <div className="card p-6 space-y-4">
-          <div className="flex items-center justify-between mb-2">
+        <div className="space-y-4">
+          {/* Quick-add built-in pages */}
+          <div className="card p-5 space-y-3">
             <div>
-              <h3 className="font-semibold text-gray-900">Navigation Links</h3>
-              <p className="text-xs text-gray-500">Links shown in the top navbar</p>
+              <h3 className="font-semibold text-gray-900">Quick Add — Built-in Pages</h3>
+              <p className="text-xs text-gray-500">
+                These pages pull their content from Org Settings (About Us / Contact Us tabs).
+                Click to add them to your navbar.
+              </p>
             </div>
-            <button onClick={() => setNavLinks(prev => [...prev, { label: 'New Link', url: '#' }])}
-              className="btn-secondary text-xs"><Plus className="w-3.5 h-3.5" /> Add Link</button>
+            <div className="flex flex-wrap gap-2">
+              {QUICK_PAGES.map(page => {
+                const alreadyAdded = navLinks.some(l => l.url === page.url);
+                return (
+                  <button key={page.url} onClick={() => addQuickPage(page)} disabled={alreadyAdded}
+                    className={clsx('flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all',
+                      alreadyAdded
+                        ? 'border-green-200 bg-green-50 text-green-700 cursor-default'
+                        : 'border-gray-200 text-gray-700 hover:border-[var(--org-primary)] hover:bg-[var(--org-primary)]/5')}>
+                    <page.icon className="w-4 h-4" />
+                    {page.label}
+                    {alreadyAdded ? <span className="text-xs">✓ Added</span> : <Plus className="w-3.5 h-3.5" />}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          {navLinks.map((link, i) => (
-            <div key={i} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-              <input className="input flex-1" placeholder="Label" value={link.label}
-                onChange={e => setNavLinks(prev => prev.map((l, j) => j === i ? { ...l, label: e.target.value } : l))} />
-              <input className="input flex-1" placeholder="URL or #anchor" value={link.url}
-                onChange={e => setNavLinks(prev => prev.map((l, j) => j === i ? { ...l, url: e.target.value } : l))} />
-              <button onClick={() => setNavLinks(prev => prev.filter((_, j) => j !== i))}
-                className="p-1.5 rounded-lg hover:bg-red-50 text-red-400"><Trash2 className="w-4 h-4" /></button>
+
+          {/* Manual nav links */}
+          <div className="card p-6 space-y-4">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h3 className="font-semibold text-gray-900">Navigation Links</h3>
+                <p className="text-xs text-gray-500">Links shown in the top navbar — drag to reorder by editing position below</p>
+              </div>
+              <button onClick={() => setNavLinks(prev => [...prev, { label: 'New Link', url: '#' }])}
+                className="btn-secondary text-xs"><Plus className="w-3.5 h-3.5" /> Add Custom Link</button>
             </div>
-          ))}
+            {navLinks.length === 0 && (
+              <p className="text-sm text-gray-400 text-center py-6">No navigation links yet — use Quick Add above or add a custom link</p>
+            )}
+            {navLinks.map((link, i) => (
+              <div key={i} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                <input className="input flex-1" placeholder="Label" value={link.label}
+                  onChange={e => setNavLinks(prev => prev.map((l, j) => j === i ? { ...l, label: e.target.value } : l))} />
+                <input className="input flex-1" placeholder="URL or #anchor" value={link.url}
+                  onChange={e => setNavLinks(prev => prev.map((l, j) => j === i ? { ...l, url: e.target.value } : l))} />
+                <button onClick={() => setNavLinks(prev => prev.filter((_, j) => j !== i))}
+                  className="p-1.5 rounded-lg hover:bg-red-50 text-red-400"><Trash2 className="w-4 h-4" /></button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

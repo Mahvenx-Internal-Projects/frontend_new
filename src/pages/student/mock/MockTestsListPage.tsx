@@ -21,8 +21,7 @@ export default function MockTestsListPage() {
   const navigate  = useNavigate();
   const { user }  = useAuthStore();
   const qc        = useQueryClient();
-  const userRoles = [user?.role, ...(user?.roles ?? [])].filter(Boolean) as string[];
-  const isAdmin   = userRoles.some(r => ['SuperAdmin', 'OrgAdmin', 'Instructor'].includes(r));
+  const isAdmin = ['SuperAdmin', 'OrgAdmin', 'Instructor'].includes(user?.role ?? '');
 
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({
@@ -60,6 +59,12 @@ export default function MockTestsListPage() {
   const deleteMut = useMutation({
     mutationFn: (id: number) => mockTestApi.delete(id),
     onSuccess: () => { toast.success('Deleted'); qc.invalidateQueries({ queryKey: ['mock-tests'] }); },
+  });
+
+  const publishMut = useMutation({
+    mutationFn: (id: number) => mockTestApi.publish(id),
+    onSuccess: () => { toast.success('Test published — visible to students now!'); qc.invalidateQueries({ queryKey: ['mock-tests'] }); },
+    onError: () => toast.error('Failed to publish'),
   });
 
   const testList = tests as any[];
@@ -222,6 +227,13 @@ export default function MockTestsListPage() {
                       onClick={() => navigate(`/dashboard/mock-test-editor/${t.id}`)}>
                       <Pencil className="w-4 h-4"/> Edit & Manage Questions
                     </button>
+                    {t.status !== 'Published' && (
+                      <button
+                        className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-white bg-green-600 hover:bg-green-700 transition-all"
+                        onClick={() => publishMut.mutate(t.id)} disabled={publishMut.isPending}>
+                        <CheckCircle2 className="w-3.5 h-3.5"/> {publishMut.isPending ? 'Publishing…' : 'Publish — Make Visible to Students'}
+                      </button>
+                    )}
                     <div className="flex gap-2">
                       <button
                         className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 transition-all"

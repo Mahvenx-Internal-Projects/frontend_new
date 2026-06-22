@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import toast from 'react-hot-toast';
-import { coursesApi, enrollmentsApi, examsApi } from '../../services/api';
+import { coursesApi, enrollmentsApi, examsApi, lessonsApi } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import type { Module, Lesson } from '../../types';
 import clsx from 'clsx';
@@ -40,6 +40,16 @@ export default function CourseDetailPage() {
 
   const enrollment = (myEnrollments as any[]).find((e: any) => e.courseId === numericCourseId);
 
+  // Per-lesson progress — drives the green tick / pending state on each
+  // lesson row in the curriculum list below.
+  const { data: lessonProgress = [] } = useQuery({
+    queryKey: ['course-lesson-progress', numericCourseId],
+    queryFn: () => lessonsApi.getCourseProgress(numericCourseId).then(r => r.data),
+    enabled: hasValidCourseId && !!enrollment,
+  });
+  const progressByLessonId: Record<number, any> = {};
+  (lessonProgress as any[]).forEach((p: any) => { progressByLessonId[p.lessonId] = p; });
+
   const enrollMut = useMutation({
     mutationFn: () => enrollmentsApi.enroll({ userId: user!.id, courseId: numericCourseId }),
     onSuccess: () => {
@@ -59,6 +69,8 @@ export default function CourseDetailPage() {
   if (!course) return <div className="text-center py-20 text-gray-400">Course not found.</div>;
 
   const totalLessons = (course.modules ?? []).reduce((s: number, m: Module) => s + (m.lessons?.length ?? 0), 0);
+  const completedLessonsCount = (lessonProgress as any[]).filter((p: any) => p.isCompleted).length;
+  const pendingLessonsCount = Math.max(0, totalLessons - completedLessonsCount);
   const previewLessons = (course.modules ?? []).flatMap((m: Module) => m.lessons ?? []).filter((l: Lesson) => l.isPreview);
   const firstLesson = (course.modules ?? [])[0]?.lessons?.[0];
 
@@ -131,9 +143,35 @@ export default function CourseDetailPage() {
 
       {/* Curriculum */}
       <div className="card p-5">
-        <h2 className="font-semibold text-gray-900 mb-4">Course Curriculum</h2>
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <h2 className="font-semibold text-gray-900">Course Curriculum</h2>
+          {enrollment && (
+            <div className="flex items-center gap-3 text-xs">
+              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-50 text-green-700 font-semibold">
+                <CheckCircle2 className="w-3.5 h-3.5"/> {completedLessonsCount} completed
+              </span>
+              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 font-semibold">
+                {pendingLessonsCount} pending
+              </span>
+            </div>
+          )}
+        </div>
         <div className="space-y-2">
-          {(course.modules ?? []).map((mod: Module, mi: number) => (
+          {(() => {
+            // Flat, in-order lesson list across all modules — needed to
+            // determine sequential lock state consistently with the
+            // lesson player page's logic.
+            const flatLessons: Lesson[] = (course.modules ?? []).flatMap((m: Module) => m.lessons ?? []);
+            const isLessonLocked = (lessonId: number): boolean => {
+              if (!course.enforceSequentialLessons) return false;
+              const idx = flatLessons.findIndex(l => l.id === lessonId);
+              for (let i = 0; i < idx; i++) {
+                if (!progressByLessonId[flatLessons[i].id]?.isCompleted) return true;
+              }
+              return false;
+            };
+
+            return (course.modules ?? []).map((mod: Module, mi: number) => (
             <div key={mod.id} className="border border-gray-200 rounded-xl overflow-hidden">
               <button
                 className="w-full flex items-center gap-3 px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
@@ -145,16 +183,38 @@ export default function CourseDetailPage() {
               {expandedMods.has(mi) && (
                 <div className="divide-y divide-gray-100">
                   {(mod.lessons ?? []).map((lesson: Lesson) => {
-                    const canPlay = lesson.isPreview || !!enrollment;
+                    const sequentiallyLocked = isLessonLocked(lesson.id);
+                    const canPlay = (lesson.isPreview || !!enrollment) && !sequentiallyLocked;
+                    const prog = progressByLessonId[lesson.id];
+                    const isDone = prog?.isCompleted ?? false;
+                    const isStarted = !isDone && (prog?.watchedSeconds ?? 0) > 0;
                     return (
                       <div key={lesson.id}
-                        className={clsx('flex items-center gap-3 px-4 py-2.5', canPlay ? 'cursor-pointer hover:bg-gray-50' : 'opacity-60')}
+                        className={clsx('flex items-center gap-3 px-4 py-2.5', canPlay ? 'cursor-pointer hover:bg-gray-50' : 'opacity-60',
+                          isDone && 'bg-green-50/40')}
+                        title={sequentiallyLocked ? 'Complete earlier lessons to unlock' : ''}
                         onClick={() => canPlay && enrollment && navigate(`/learn/${course.id}/lesson/${lesson.id}`)}>
-                        {canPlay
-                          ? <Play className="w-3.5 h-3.5 text-brand-500 flex-shrink-0" />
-                          : <Lock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />}
-                        <span className="flex-1 text-sm text-gray-700">{lesson.title}</span>
+                        {/* Completion indicator: green tick / in-progress dot / lock / play */}
+                        {isDone ? (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+                        ) : !canPlay ? (
+                          <Lock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                        ) : isStarted ? (
+                          <div className="w-3.5 h-3.5 rounded-full border-2 border-[var(--org-primary)] flex items-center justify-center flex-shrink-0">
+                            <div className="w-1.5 h-1.5 rounded-full bg-[var(--org-primary)]" />
+                          </div>
+                        ) : (
+                          <Play className="w-3.5 h-3.5 text-brand-500 flex-shrink-0" />
+                        )}
+                        <span className={clsx('flex-1 text-sm', isDone ? 'text-gray-500 line-through' : 'text-gray-700')}>
+                          {lesson.title}
+                        </span>
                         {lesson.isPreview && <span className="badge-blue text-xs">Preview</span>}
+                        {isStarted && prog?.watchedSeconds > 0 && (
+                          <span className="text-xs text-[var(--org-primary)] font-semibold">
+                            {Math.min(100, Math.round(prog.watchedSeconds / Math.max(1, lesson.durationSecs) * 100))}%
+                          </span>
+                        )}
                         <span className="text-xs text-gray-400">{Math.round(lesson.durationSecs / 60)} min</span>
                       </div>
                     );
@@ -162,7 +222,8 @@ export default function CourseDetailPage() {
                 </div>
               )}
             </div>
-          ))}
+          ));
+          })()}
         </div>
       </div>
 

@@ -23,8 +23,14 @@ api.interceptors.response.use(
   r => r,
   err => {
     if (err.response?.status === 401) {
+      // Clear both the raw token AND the Zustand-persisted auth store key.
+      // Without clearing 'lms_auth' too, isAuthenticated stays true after
+      // reload and the app silently logs the user back in to their real
+      // role's dashboard — which looks like a confusing "bounce back"
+      // instead of a clean logout.
       localStorage.removeItem('lms_token');
       localStorage.removeItem('lms_user');
+      localStorage.removeItem('lms_auth');
       window.location.href = '/login';
     }
     return Promise.reject(err);
@@ -222,12 +228,12 @@ export const liveClassApi = {
 };
 
 export const mockTestApi = {
-  getAll:         (p?: object) => api.get('/mocktests', { params: p }),
-  get:            (id: number) => api.get(`/mocktests/${id}`),
-  create:         (d: object) => api.post('/mocktests', d),
-  update:         (id: number, d: object) => api.put(`/mocktests/${id}`, d),
+  getAll:     (params: object) => api.get('/mocktests', { params }),
+  get:        (id: number)     => api.get(`/mocktests/${id}`),
+  create:     (d: object)      => api.post('/mocktests', d),
+  update:     (id: number, d: object) => api.put(`/mocktests/${id}`, d),
+  delete:     (id: number)     => api.delete(`/mocktests/${id}`),
   publish:        (id: number) => api.put(`/mocktests/${id}/publish`),
-  delete:         (id: number) => api.delete(`/mocktests/${id}`),
   addQuestion:    (testId: number, d: object) => api.post(`/mocktests/${testId}/questions`, d),
   updateQuestion: (qId: number, d: object)   => api.put(`/mocktests/questions/${qId}`, d),
   deleteQuestion: (qId: number) => api.delete(`/mocktests/questions/${qId}`),
