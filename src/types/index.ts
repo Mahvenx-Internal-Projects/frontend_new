@@ -8,7 +8,7 @@ export type QuestionType = 'SingleChoice' | 'MultiChoice' | 'TrueFalse' | 'Short
 
 export interface User {
   id: number; firstName: string; lastName: string; email: string;
-  avatarUrl?: string; role: UserRole; roles?: UserRole[]; isActive: boolean;
+  avatarUrl?: string; role: UserRole; isActive: boolean;
   createdAt: string; lastLogin?: string;
   organizationId: number; organizationName: string;
 }
@@ -38,6 +38,7 @@ export interface Course {
   enrollmentCount: number; averageRating: number; ratingCount: number;
   createdAt: string; updatedAt: string;
   modules?: Module[];
+  enforceSequentialLessons?: boolean;
 }
 
 export interface Module {
@@ -51,6 +52,8 @@ export interface Lesson {
   type: LessonType; durationSecs: number; displayOrder: number;
   isPreview: boolean; isPublished: boolean; moduleId: number;
   progress?: LessonProgress;
+  parentLessonId?: number | null;
+  childLessons?: Lesson[];
 }
 
 export interface LessonProgress {
@@ -63,6 +66,7 @@ export interface Enrollment {
   courseId: number; courseTitle: string;
   enrolledAt: string; completedAt?: string;
   status: EnrollmentStatus; progressPercent: number;
+  totalWatchSeconds?: number;
 }
 
 export interface Exam {
@@ -114,6 +118,8 @@ export interface StudentDashboard {
   enrolledCourses: number; completedCourses: number;
   certificatesEarned: number; totalWatchMinutes: number;
   activeEnrollments: Enrollment[];
+  weekActivity?: { label: string; minutes: number; seconds?: number }[];
+  totalWatchSeconds?: number;
 }
 
 export interface RecentActivity { type: string; message: string; at: string; }

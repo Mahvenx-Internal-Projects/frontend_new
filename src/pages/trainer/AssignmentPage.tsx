@@ -3,19 +3,27 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Trash2, Pencil, Send, CheckCircle2, Clock,
   FileText, Upload, Download, MessageSquare, X,
-  ChevronDown, ChevronUp, AlertCircle, Users
+  ChevronDown, ChevronUp, AlertCircle, Users, RotateCcw
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { assignmentsApi, coursesApi } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import clsx from 'clsx';
 
-const statusColors: Record<string,string> = {
-  Pending:   'bg-gray-100 text-gray-600',
-  Submitted: 'bg-blue-100 text-blue-700',
-  Graded:    'bg-green-100 text-green-700',
-  Returned:  'bg-amber-100 text-amber-700',
-  Overdue:   'bg-red-100 text-red-700',
+// ── Submission status badges (per-student state, not assignment state) ──────
+const subStatusColors: Record<string,string> = {
+  NotSubmitted: 'bg-gray-100 text-gray-600',
+  Submitted:    'bg-blue-100 text-blue-700',
+  Late:         'bg-amber-100 text-amber-700',
+  Graded:       'bg-green-100 text-green-700',
+  ResubmitRequested: 'bg-orange-100 text-orange-700',
+};
+const subStatusLabel: Record<string,string> = {
+  NotSubmitted: 'Not Submitted',
+  Submitted:    'Submitted',
+  Late:         'Submitted Late',
+  Graded:       'Graded',
+  ResubmitRequested: 'Resubmission Requested',
 };
 
 export default function AssignmentPage() {
@@ -87,12 +95,29 @@ export default function AssignmentPage() {
   const gradeMut = useMutation({
     mutationFn: () => assignmentsApi.grade({
       submissionId: gradeModal.id,
-      marks: Number(gradeForm.marks),
+      marks: gradeForm.status === 'ResubmitRequested' ? null : Number(gradeForm.marks),
       feedback: gradeForm.feedback,
       status: gradeForm.status,
+      gradedById: user!.id,
     }),
-    onSuccess: () => { toast.success('Graded & student notified!'); refetchSubs(); setGradeModal(null); },
+    onSuccess: () => {
+      toast.success(gradeForm.status === 'ResubmitRequested' ? 'Resubmission requested!' : 'Graded & student notified!');
+      refetchSubs(); setGradeModal(null);
+    },
     onError: () => toast.error('Failed to grade'),
+  });
+
+  // Admin: request resubmission WITHOUT grading (no marks required)
+  const requestResubmitMut = useMutation({
+    mutationFn: (sub: any) => assignmentsApi.grade({
+      submissionId: sub.id,
+      marks: null,
+      feedback: sub._resubmitFeedback || 'Please review the feedback and resubmit.',
+      status: 'ResubmitRequested',
+      gradedById: user!.id,
+    }),
+    onSuccess: () => { toast.success('Resubmission requested — student notified!'); refetchSubs(); },
+    onError: () => toast.error('Failed to request resubmission'),
   });
 
   const startEdit = (a: any) => {
@@ -102,9 +127,13 @@ export default function AssignmentPage() {
   };
 
   const aList = assignments as any[];
-  const pending   = aList.filter(a => a.status === 'Pending' || !a.status);
-  const submitted = aList.filter(a => a.status === 'Submitted');
-  const graded    = aList.filter(a => a.status === 'Graded' || a.status === 'Returned');
+
+  // For students: use myStatus (their own submission state), not the assignment's publish status
+  const getStudentStatus = (a: any) => a.myStatus ?? 'NotSubmitted';
+
+  const pending   = !isInstructor ? aList.filter(a => getStudentStatus(a) === 'NotSubmitted' || getStudentStatus(a) === 'ResubmitRequested') : [];
+  const submitted = !isInstructor ? aList.filter(a => ['Submitted','Late'].includes(getStudentStatus(a))) : aList.filter(a => a.submissionCount > 0);
+  const graded    = !isInstructor ? aList.filter(a => getStudentStatus(a) === 'Graded') : [];
 
   return (
     <div className="space-y-6">
@@ -128,8 +157,8 @@ export default function AssignmentPage() {
       <div className="grid grid-cols-3 gap-4">
         {[
           {label:'Total',     value: aList.length,      color:'text-blue-600',  bg:'bg-blue-50'  },
-          {label:'Submitted', value: submitted.length,  color:'text-amber-600', bg:'bg-amber-50' },
-          {label:'Graded',    value: graded.length,     color:'text-green-600', bg:'bg-green-50' },
+          {label: isInstructor ? 'With Submissions' : 'Submitted', value: submitted.length,  color:'text-amber-600', bg:'bg-amber-50' },
+          {label:'Graded',    value: isInstructor ? aList.filter(a=>a.gradedCount>0).length : graded.length, color:'text-green-600', bg:'bg-green-50' },
         ].map(s => (
           <div key={s.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
             <p className={clsx('text-3xl font-black', s.color)}>{s.value}</p>
@@ -213,15 +242,18 @@ export default function AssignmentPage() {
         <div className="space-y-3">
           {aList.map((a:any) => {
             const isExpanded = expandedId === a.id;
-            const isOverdue  = a.dueDate && new Date(a.dueDate) < new Date() && a.status !== 'Graded';
+            const studentStatus = getStudentStatus(a);
+            const isOverdue  = a.dueDate && new Date(a.dueDate) < new Date() && studentStatus !== 'Graded';
+            const canSubmit  = !isInstructor && (studentStatus === 'NotSubmitted' || studentStatus === 'ResubmitRequested');
+
             return (
               <div key={a.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
                 <div className="flex items-start gap-4 p-5">
                   {/* Icon */}
                   <div className={clsx('w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0',
-                    a.status==='Graded'?'bg-green-100':a.status==='Submitted'?'bg-blue-100':isOverdue?'bg-red-100':'bg-gray-100')}>
-                    {a.status==='Graded'?<CheckCircle2 className="w-6 h-6 text-green-600"/>:
-                     a.status==='Submitted'?<Upload className="w-6 h-6 text-blue-600"/>:
+                    studentStatus==='Graded'?'bg-green-100':['Submitted','Late'].includes(studentStatus)?'bg-blue-100':isOverdue?'bg-red-100':'bg-gray-100')}>
+                    {studentStatus==='Graded'?<CheckCircle2 className="w-6 h-6 text-green-600"/>:
+                     ['Submitted','Late'].includes(studentStatus)?<Upload className="w-6 h-6 text-blue-600"/>:
                      isOverdue?<AlertCircle className="w-6 h-6 text-red-500"/>:
                      <FileText className="w-6 h-6 text-gray-400"/>}
                   </div>
@@ -229,9 +261,11 @@ export default function AssignmentPage() {
                   {/* Content */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className={clsx('text-xs font-bold px-2 py-0.5 rounded-full', statusColors[a.status ?? 'Pending'])}>
-                        {isOverdue && a.status !== 'Graded' ? 'Overdue' : (a.status ?? 'Pending')}
-                      </span>
+                      {!isInstructor && (
+                        <span className={clsx('text-xs font-bold px-2 py-0.5 rounded-full', subStatusColors[studentStatus])}>
+                          {isOverdue && studentStatus === 'NotSubmitted' ? 'Overdue' : subStatusLabel[studentStatus]}
+                        </span>
+                      )}
                       {a.courseTitle && <span className="text-xs text-gray-400">{a.courseTitle}</span>}
                       <span className="text-xs font-bold text-gray-500 ml-auto">{a.maxMarks} marks</span>
                     </div>
@@ -247,16 +281,17 @@ export default function AssignmentPage() {
                       {isInstructor && a.submissionCount != null && (
                         <span className="flex items-center gap-1"><Users className="w-3 h-3"/> {a.submissionCount} submissions</span>
                       )}
-                      {!isInstructor && a.marksObtained != null && (
+                      {!isInstructor && a.myMarks != null && (
                         <span className="flex items-center gap-1 text-green-600 font-bold">
-                          <CheckCircle2 className="w-3 h-3"/> Score: {a.marksObtained}/{a.maxMarks}
+                          <CheckCircle2 className="w-3 h-3"/> Score: {a.myMarks}/{a.maxMarks}
                         </span>
                       )}
                     </div>
                     {/* Student feedback */}
-                    {!isInstructor && a.feedback && (
-                      <div className="mt-2 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 text-xs text-blue-800">
-                        💬 <strong>Instructor feedback:</strong> {a.feedback}
+                    {!isInstructor && a.myFeedback && (
+                      <div className={clsx('mt-2 border rounded-xl px-3 py-2 text-xs',
+                        studentStatus === 'ResubmitRequested' ? 'bg-orange-50 border-orange-200 text-orange-800' : 'bg-blue-50 border-blue-200 text-blue-800')}>
+                        💬 <strong>{studentStatus === 'ResubmitRequested' ? 'Resubmission requested:' : 'Instructor feedback:'}</strong> {a.myFeedback}
                       </div>
                     )}
                   </div>
@@ -278,8 +313,8 @@ export default function AssignmentPage() {
                         </button>
                       </>
                     ) : (
-                      a.status === 'Pending' || a.status === 'Returned' ? (
-                        <StudentSubmitButton assignment={a} onSubmitted={() => qc.invalidateQueries({queryKey:['assignments']})}/>
+                      canSubmit ? (
+                        <StudentSubmitButton assignment={a} resubmit={studentStatus === 'ResubmitRequested'} onSubmitted={() => qc.invalidateQueries({queryKey:['assignments']})}/>
                       ) : a.attachmentUrl && (
                         <a href={a.attachmentUrl} target="_blank" rel="noreferrer"
                           className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-gray-600 bg-gray-50 border border-gray-200 hover:bg-gray-100">
@@ -311,7 +346,7 @@ export default function AssignmentPage() {
                               <p className="text-xs text-gray-400">
                                 Submitted {new Date(sub.submittedAt).toLocaleDateString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}
                               </p>
-                              {sub.feedback && <p className="text-xs text-blue-600 mt-0.5">💬 {sub.feedback}</p>}
+                              {sub.feedback && <p className={clsx('text-xs mt-0.5', sub.status === 'ResubmitRequested' ? 'text-orange-600' : 'text-blue-600')}>💬 {sub.feedback}</p>}
                             </div>
                             <div className="flex items-center gap-2 flex-shrink-0">
                               {sub.fileUrl && (
@@ -325,11 +360,24 @@ export default function AssignmentPage() {
                                   {sub.marks}/{a.maxMarks}
                                 </span>
                               ) : (
-                                <button onClick={() => { setGradeModal(sub); setGradeForm({marks:'', feedback:'', status:'Graded'}); }}
-                                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-all hover:opacity-90"
-                                  style={{background:'linear-gradient(135deg,var(--org-primary),var(--org-secondary,var(--org-primary)))'}}>
-                                  <MessageSquare className="w-3 h-3"/> Grade
-                                </button>
+                                <>
+                                  <button onClick={() => { setGradeModal(sub); setGradeForm({marks:'', feedback:'', status:'Graded'}); }}
+                                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-all hover:opacity-90"
+                                    style={{background:'linear-gradient(135deg,var(--org-primary),var(--org-secondary,var(--org-primary)))'}}>
+                                    <MessageSquare className="w-3 h-3"/> Grade
+                                  </button>
+                                  {sub.status !== 'ResubmitRequested' && (
+                                    <button
+                                      onClick={() => {
+                                        const fb = prompt('Feedback for resubmission request:', 'Please review and resubmit your work.');
+                                        if (fb !== null) requestResubmitMut.mutate({ ...sub, _resubmitFeedback: fb });
+                                      }}
+                                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-orange-700 bg-orange-50 border border-orange-200 hover:bg-orange-100"
+                                      disabled={requestResubmitMut.isPending}>
+                                      <RotateCcw className="w-3 h-3"/> Request Resubmit
+                                    </button>
+                                  )}
+                                </>
                               )}
                             </div>
                           </div>
@@ -353,11 +401,13 @@ export default function AssignmentPage() {
               <button onClick={() => setGradeModal(null)} className="p-2 rounded-xl hover:bg-gray-100"><X className="w-4 h-4"/></button>
             </div>
             <p className="text-sm text-gray-500">Student: <strong>{gradeModal.studentName}</strong></p>
-            <div>
-              <label className="label">Marks *</label>
-              <input className="input" type="number" min={0} placeholder="e.g. 85"
-                value={gradeForm.marks} onChange={e => setGradeForm(f => ({...f, marks: e.target.value}))}/>
-            </div>
+            {gradeForm.status !== 'ResubmitRequested' && (
+              <div>
+                <label className="label">Marks *</label>
+                <input className="input" type="number" min={0} placeholder="e.g. 85"
+                  value={gradeForm.marks} onChange={e => setGradeForm(f => ({...f, marks: e.target.value}))}/>
+              </div>
+            )}
             <div>
               <label className="label">Feedback / Comments</label>
               <textarea className="input min-h-[100px]" placeholder="Great work on the first part, however improve the error handling section…"
@@ -367,15 +417,15 @@ export default function AssignmentPage() {
               <label className="label">Status</label>
               <select className="input" value={gradeForm.status} onChange={e => setGradeForm(f => ({...f, status: e.target.value}))}>
                 <option value="Graded">Graded ✅</option>
-                <option value="Returned">Returned for revision ↩️</option>
+                <option value="ResubmitRequested">Request Resubmission ↩️</option>
               </select>
             </div>
             <div className="flex gap-3 pt-2">
               <button className="btn-secondary flex-1 justify-center" onClick={() => setGradeModal(null)}>Cancel</button>
               <button className="btn-primary flex-1 justify-center" onClick={() => gradeMut.mutate()}
-                disabled={!gradeForm.marks || gradeMut.isPending}>
+                disabled={(gradeForm.status !== 'ResubmitRequested' && !gradeForm.marks) || gradeMut.isPending}>
                 <Send className="w-4 h-4"/>
-                {gradeMut.isPending ? 'Saving…' : 'Submit Grade & Notify'}
+                {gradeMut.isPending ? 'Saving…' : gradeForm.status === 'ResubmitRequested' ? 'Request Resubmission & Notify' : 'Submit Grade & Notify'}
               </button>
             </div>
           </div>
@@ -386,7 +436,7 @@ export default function AssignmentPage() {
 }
 
 // ─── Student submit button ─────────────────────────────────────
-function StudentSubmitButton({ assignment, onSubmitted }: { assignment: any; onSubmitted: () => void }) {
+function StudentSubmitButton({ assignment, resubmit, onSubmitted }: { assignment: any; resubmit: boolean; onSubmitted: () => void }) {
   const { user } = useAuthStore();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ notes: '', fileUrl: '' });
@@ -395,7 +445,7 @@ function StudentSubmitButton({ assignment, onSubmitted }: { assignment: any; onS
     mutationFn: () => assignmentsApi.submit({
       assignmentId: assignment.id,
       studentId: user!.id,
-      notes: form.notes,
+      submissionText: form.notes,
       fileUrl: form.fileUrl,
     }),
     onSuccess: () => { toast.success('Submitted! Instructor notified.'); setOpen(false); onSubmitted(); },
@@ -405,9 +455,9 @@ function StudentSubmitButton({ assignment, onSubmitted }: { assignment: any; onS
   if (!open) return (
     <button onClick={() => setOpen(true)}
       className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white hover:opacity-90 transition-all"
-      style={{background:'linear-gradient(135deg,var(--org-primary),var(--org-secondary,var(--org-primary)))'}}>
-      <Upload className="w-3.5 h-3.5"/>
-      {assignment.status === 'Returned' ? 'Resubmit' : 'Submit'}
+      style={{background: resubmit ? '#ea580c' : 'linear-gradient(135deg,var(--org-primary),var(--org-secondary,var(--org-primary)))'}}>
+      {resubmit ? <RotateCcw className="w-3.5 h-3.5"/> : <Upload className="w-3.5 h-3.5"/>}
+      {resubmit ? 'Resubmit' : 'Submit'}
     </button>
   );
 
@@ -415,7 +465,7 @@ function StudentSubmitButton({ assignment, onSubmitted }: { assignment: any; onS
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="font-bold text-gray-900">Submit Assignment</h3>
+          <h3 className="font-bold text-gray-900">{resubmit ? 'Resubmit Assignment' : 'Submit Assignment'}</h3>
           <button onClick={() => setOpen(false)} className="p-2 rounded-xl hover:bg-gray-100"><X className="w-4 h-4"/></button>
         </div>
         <p className="text-sm font-semibold text-gray-700">{assignment.title}</p>
@@ -434,7 +484,7 @@ function StudentSubmitButton({ assignment, onSubmitted }: { assignment: any; onS
           <button className="btn-primary flex-1 justify-center" onClick={() => submitMut.mutate()}
             disabled={!form.fileUrl || submitMut.isPending}>
             <Upload className="w-4 h-4"/>
-            {submitMut.isPending ? 'Submitting…' : 'Submit Assignment'}
+            {submitMut.isPending ? 'Submitting…' : resubmit ? 'Resubmit Assignment' : 'Submit Assignment'}
           </button>
         </div>
       </div>

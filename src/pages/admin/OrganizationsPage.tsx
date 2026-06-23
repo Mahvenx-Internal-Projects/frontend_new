@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Pencil, Trash2, Globe, Users, BookOpen, Upload, X, ImageIcon, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { orgsApi, uploadApi } from '../../services/api';
+import { useAuthStore } from '../../store/authStore';
 import type { Organization } from '../../types';
 import Modal from '../../components/shared/Modal';
 
@@ -128,6 +129,8 @@ export default function OrganizationsPage() {
   };
 
   const orgs: any[] = (data as any)?.items ?? data ?? [];
+  const { user: me } = useAuthStore();
+  const isSuperAdmin = me?.role === 'SuperAdmin';
 
   return (
     <div className="space-y-6">
@@ -136,9 +139,11 @@ export default function OrganizationsPage() {
           <h1 className="page-title">Organizations</h1>
           <p className="page-sub">Manage all organizations in the platform</p>
         </div>
-        <button className="btn-primary" onClick={openCreate}>
-          <Plus className="w-4 h-4"/> New Organization
-        </button>
+        {isSuperAdmin && (
+          <button className="btn-primary" onClick={openCreate}>
+            <Plus className="w-4 h-4"/> New Organization
+          </button>
+        )}
       </div>
 
       {isLoading ? (
@@ -183,15 +188,17 @@ export default function OrganizationsPage() {
                 )}
               </div>
 
-              <div className="flex gap-2 pt-3 border-t border-gray-100">
-                <button className="btn-secondary flex-1 justify-center text-xs" onClick={() => openEdit(org)}>
-                  <Pencil className="w-3 h-3"/> Edit
-                </button>
-                <button className="btn-danger flex-1 justify-center text-xs"
-                  onClick={() => { if (confirm('Deactivate this organization?')) deleteMut.mutate(org.id); }}>
-                  <Trash2 className="w-3 h-3"/> Deactivate
-                </button>
-              </div>
+              {isSuperAdmin && (
+                <div className="flex gap-2 pt-3 border-t border-gray-100">
+                  <button className="btn-secondary flex-1 justify-center text-xs" onClick={() => openEdit(org)}>
+                    <Pencil className="w-3 h-3"/> Edit
+                  </button>
+                  <button className="btn-danger flex-1 justify-center text-xs"
+                    onClick={() => { if (confirm('Deactivate this organization?')) deleteMut.mutate(org.id); }}>
+                    <Trash2 className="w-3 h-3"/> Deactivate
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>

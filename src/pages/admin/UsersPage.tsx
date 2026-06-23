@@ -63,7 +63,7 @@ export default function UsersPage() {
     departmentIds: [] as number[]
   });
 
-  const isSuperAdmin = me?.role === 'SuperAdmin' || (me?.roles ?? []).includes('SuperAdmin');
+  const isSuperAdmin = me?.role === 'SuperAdmin';
   const availableRoles = isSuperAdmin ? ALL_ROLES : ALL_ROLES.filter(r => r !== 'SuperAdmin');
 
   const { data, isLoading } = useQuery({
@@ -130,52 +130,12 @@ export default function UsersPage() {
   const openView = (u: any) => { setSelected(u); setModal('view'); };
   const toggleRole = (r: string) => setForm(f => ({ ...f, roles: f.roles.includes(r) ? f.roles.filter(x => x !== r) : [...f.roles, r] }));
 
-  const UserFormFields = () => (
-    <>
-      <div className="grid grid-cols-2 gap-3">
-        <div><label className="label">First Name *</label>
-          <input className="input" value={form.firstName} onChange={e => setForm(f => ({...f, firstName: e.target.value}))} /></div>
-        <div><label className="label">Last Name *</label>
-          <input className="input" value={form.lastName} onChange={e => setForm(f => ({...f, lastName: e.target.value}))} /></div>
-      </div>
-      <div><label className="label">Email *</label>
-        <input className="input" type="email" value={form.email} onChange={e => setForm(f => ({...f, email: e.target.value}))} /></div>
-      {modal === 'create' && <div><label className="label">Password *</label>
-        <input className="input" type="password" value={form.password} onChange={e => setForm(f => ({...f, password: e.target.value}))} /></div>}
-    </>
-  );
-
-  const RolesFields = () => (
-    <>
-      <div>
-        <label className="label">Roles <span className="text-xs text-gray-400 font-normal">(select all that apply)</span></label>
-        <div className="grid grid-cols-2 gap-2 mt-1">
-          {availableRoles.map(r => <RolePill key={r} role={r} checked={form.roles.includes(r)} onChange={() => toggleRole(r)} />)}
-        </div>
-        {form.roles.length === 0 && <p className="text-xs text-red-500 mt-1">At least one role required</p>}
-      </div>
-      {(departments as any[]).length > 0 && (
-        <div>
-          <label className="label">Departments <span className="text-xs text-gray-400 font-normal">(optional)</span></label>
-          <div className="grid grid-cols-2 gap-2 mt-1">
-            {(departments as any[]).map((d: any) => (
-              <label key={d.id} className={clsx('flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer border-2 transition-all',
-                form.departmentIds.includes(d.id) ? 'shadow-sm' : 'border-gray-100 bg-gray-50')}>
-                <input type="checkbox" className="hidden"
-                  checked={form.departmentIds.includes(d.id)}
-                  onChange={() => setForm(f => ({ ...f, departmentIds: f.departmentIds.includes(d.id) ? f.departmentIds.filter(i => i !== d.id) : [...f.departmentIds, d.id] }))} />
-                <div className="w-4 h-4 rounded flex items-center justify-center text-white text-xs"
-                  style={form.departmentIds.includes(d.id) ? { background: d.color || '#6366f1' } : { background: '#e5e7eb' }}>
-                  {form.departmentIds.includes(d.id) && '✓'}
-                </div>
-                <span className="text-sm text-gray-700">{d.iconEmoji} {d.name}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-      )}
-    </>
-  );
+  // NOTE: UserFormFields / RolesFields were previously defined as inline
+  // function components inside this render body. That meant every keystroke
+  // (setForm -> re-render) created BRAND NEW component instances, so React
+  // unmounted and remounted the <input> elements on every character typed —
+  // losing focus after exactly one keystroke. Rendered as plain JSX blocks
+  // below instead (no separate component identity), which fixes it.
 
   return (
     <div className="space-y-5">
@@ -306,8 +266,43 @@ export default function UsersPage() {
       {/* Create Modal */}
       <Modal open={modal === 'create'} onClose={() => setModal(null)} title="Add New User" size="lg">
         <div className="p-5 space-y-4">
-          <UserFormFields />
-          <RolesFields />
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="label">First Name *</label>
+              <input className="input" value={form.firstName} onChange={e => setForm(f => ({...f, firstName: e.target.value}))} /></div>
+            <div><label className="label">Last Name *</label>
+              <input className="input" value={form.lastName} onChange={e => setForm(f => ({...f, lastName: e.target.value}))} /></div>
+          </div>
+          <div><label className="label">Email *</label>
+            <input className="input" type="email" value={form.email} onChange={e => setForm(f => ({...f, email: e.target.value}))} /></div>
+          {modal === 'create' && <div><label className="label">Password *</label>
+            <input className="input" type="password" value={form.password} onChange={e => setForm(f => ({...f, password: e.target.value}))} /></div>}
+          <div>
+            <label className="label">Roles <span className="text-xs text-gray-400 font-normal">(select all that apply)</span></label>
+            <div className="grid grid-cols-2 gap-2 mt-1">
+              {availableRoles.map(r => <RolePill key={r} role={r} checked={form.roles.includes(r)} onChange={() => toggleRole(r)} />)}
+            </div>
+            {form.roles.length === 0 && <p className="text-xs text-red-500 mt-1">At least one role required</p>}
+          </div>
+          {(departments as any[]).length > 0 && (
+            <div>
+              <label className="label">Departments <span className="text-xs text-gray-400 font-normal">(optional)</span></label>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                {(departments as any[]).map((d: any) => (
+                  <label key={d.id} className={clsx('flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer border-2 transition-all',
+                    form.departmentIds.includes(d.id) ? 'shadow-sm' : 'border-gray-100 bg-gray-50')}>
+                    <input type="checkbox" className="hidden"
+                      checked={form.departmentIds.includes(d.id)}
+                      onChange={() => setForm(f => ({ ...f, departmentIds: f.departmentIds.includes(d.id) ? f.departmentIds.filter(i => i !== d.id) : [...f.departmentIds, d.id] }))} />
+                    <div className="w-4 h-4 rounded flex items-center justify-center text-white text-xs"
+                      style={form.departmentIds.includes(d.id) ? { background: d.color || '#6366f1' } : { background: '#e5e7eb' }}>
+                      {form.departmentIds.includes(d.id) && '✓'}
+                    </div>
+                    <span className="text-sm text-gray-700">{d.iconEmoji} {d.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
           {me?.role === 'SuperAdmin' && (
             <div><label className="label">Organization</label>
               <select className="input" value={form.organizationId} onChange={e => setForm(f => ({...f, organizationId: e.target.value}))}>
@@ -360,7 +355,33 @@ export default function UsersPage() {
                 <p className="text-xs text-gray-400">{selected.email}</p></div>
             </div>
           )}
-          <RolesFields />
+          <div>
+            <label className="label">Roles <span className="text-xs text-gray-400 font-normal">(select all that apply)</span></label>
+            <div className="grid grid-cols-2 gap-2 mt-1">
+              {availableRoles.map(r => <RolePill key={r} role={r} checked={form.roles.includes(r)} onChange={() => toggleRole(r)} />)}
+            </div>
+            {form.roles.length === 0 && <p className="text-xs text-red-500 mt-1">At least one role required</p>}
+          </div>
+          {(departments as any[]).length > 0 && (
+            <div>
+              <label className="label">Departments <span className="text-xs text-gray-400 font-normal">(optional)</span></label>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                {(departments as any[]).map((d: any) => (
+                  <label key={d.id} className={clsx('flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer border-2 transition-all',
+                    form.departmentIds.includes(d.id) ? 'shadow-sm' : 'border-gray-100 bg-gray-50')}>
+                    <input type="checkbox" className="hidden"
+                      checked={form.departmentIds.includes(d.id)}
+                      onChange={() => setForm(f => ({ ...f, departmentIds: f.departmentIds.includes(d.id) ? f.departmentIds.filter(i => i !== d.id) : [...f.departmentIds, d.id] }))} />
+                    <div className="w-4 h-4 rounded flex items-center justify-center text-white text-xs"
+                      style={form.departmentIds.includes(d.id) ? { background: d.color || '#6366f1' } : { background: '#e5e7eb' }}>
+                      {form.departmentIds.includes(d.id) && '✓'}
+                    </div>
+                    <span className="text-sm text-gray-700">{d.iconEmoji} {d.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="flex gap-3 pt-2">
             <button className="btn-secondary flex-1 justify-center" onClick={() => setModal(null)}>Cancel</button>
             <button className="btn-primary flex-1 justify-center" onClick={() => updateRolesMut.mutate()}

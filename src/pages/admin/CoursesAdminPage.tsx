@@ -26,11 +26,16 @@ export default function CoursesAdminPage() {
   const [statusFilter, setStatus] = useState('');
   const [page, setPage]           = useState(1);
 
+  const isInstructor = user?.role === 'Instructor';
+
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-courses', search, statusFilter, page, user?.organizationId],
+    queryKey: ['admin-courses', search, statusFilter, page, user?.organizationId, isInstructor ? user?.id : null],
     queryFn: () => coursesApi.getAll({
-      // SuperAdmin (orgId=null) sees all; OrgAdmin filtered to their org
-      orgId:  user?.organizationId || undefined,
+      // SuperAdmin (orgId=null) sees all; OrgAdmin filtered to their org;
+      // Instructor further filtered to ONLY their own courses, not the
+      // whole organization's catalog.
+      orgId:        user?.organizationId || undefined,
+      instructorId: isInstructor ? user?.id : undefined,
       search: search   || undefined,
       status: statusFilter || undefined,
       page, size: 12,

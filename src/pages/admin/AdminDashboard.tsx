@@ -6,19 +6,237 @@ import {
 } from 'recharts';
 import {
   Users, BookOpen, TrendingUp, Award, CreditCard,
-  Activity, ChevronRight, UserPlus, Clock
+  Activity, ChevronRight, UserPlus, Clock, Building2, Globe
 } from 'lucide-react';
 import { dashboardApi } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import clsx from 'clsx';
 
-export default function AdminDashboard() {
+const API_BASE = typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  ? '' : 'https://api.worksupport360.com';
+
+// ════════════════════════════════════════════════════════════════════════════
+// SuperAdmin view — platform-wide stats across ALL organizations
+// ════════════════════════════════════════════════════════════════════════════
+function SuperAdminDashboard() {
+  const navigate = useNavigate();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['superadmin-dash'],
+    queryFn: async () => {
+      const token = localStorage.getItem('lms_token') ?? '';
+      const res = await fetch(`${API_BASE}/api/dashboard/superadmin`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Failed to load');
+      return res.json();
+    },
+  });
+
+  const d = data as any;
+
+  const stats = [
+    { label: 'Organizations',     value: d?.totalOrgs ?? 0,        sub: `${d?.activeOrgs ?? 0} active`,        icon: Building2,  color: 'text-indigo-600',  bg: 'bg-indigo-50' },
+    { label: 'Total Users',       value: d?.totalUsers ?? 0,       sub: `${d?.totalStudents ?? 0} students`,    icon: Users,      color: 'text-blue-600',    bg: 'bg-blue-50' },
+    { label: 'Total Courses',     value: d?.totalCourses ?? 0,     sub: 'across all orgs',                      icon: BookOpen,   color: 'text-purple-600',  bg: 'bg-purple-50' },
+    { label: 'Total Enrollments', value: d?.totalEnrollments ?? 0, sub: 'all time',                              icon: TrendingUp, color: 'text-green-600',   bg: 'bg-green-50' },
+    { label: 'Platform Revenue',  value: d?.revenue ? `₹${Math.round(d.revenue).toLocaleString('en-IN')}` : '₹0', sub: 'all time', icon: CreditCard, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+  ];
+
+  const orgBreakdown: any[] = d?.orgBreakdown ?? [];
+  const recentStudents: any[] = d?.recentStudents ?? [];
+  const recentCourses: any[]  = d?.recentCourses ?? [];
+  const monthly: any[] = d?.monthlyActivity ?? [];
+
+  if (isLoading) return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">{[...Array(5)].map((_,i) => <div key={i} className="h-24 bg-gray-100 animate-pulse rounded-2xl"/>)}</div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">{[...Array(2)].map((_,i) => <div key={i} className="h-64 bg-gray-100 animate-pulse rounded-2xl"/>)}</div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="page-title flex items-center gap-2">
+          <Globe className="w-6 h-6 text-indigo-600"/> Platform Overview
+        </h1>
+        <p className="page-sub">Real-time stats across all organizations</p>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        {stats.map(s => (
+          <div key={s.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-3">
+              <div className={clsx('w-10 h-10 rounded-xl flex items-center justify-center', s.bg)}>
+                <s.icon className={clsx('w-5 h-5', s.color)}/>
+              </div>
+              <span className="text-xs text-gray-400">{s.sub}</span>
+            </div>
+            <p className="text-2xl font-black text-gray-900">{s.value}</p>
+            <p className="text-xs text-gray-500 font-medium mt-1">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Platform-wide trend charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-gray-900">Platform Enrollments</h3>
+            <span className="text-xs text-gray-400">Last 6 months, all orgs</span>
+          </div>
+          {monthly.length === 0 ? (
+            <div className="h-48 flex items-center justify-center text-gray-400 text-sm">No data yet</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={180}>
+              <AreaChart data={monthly} margin={{top:5,right:10,bottom:0,left:-20}}>
+                <defs>
+                  <linearGradient id="platEnGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6"/>
+                <XAxis dataKey="label" tick={{fontSize:11,fill:'#9ca3af'}} axisLine={false} tickLine={false}/>
+                <YAxis tick={{fontSize:11,fill:'#9ca3af'}} axisLine={false} tickLine={false}/>
+                <Tooltip contentStyle={{borderRadius:'12px',border:'1px solid #e5e7eb',fontSize:'12px'}}/>
+                <Area type="monotone" dataKey="enrollments" stroke="#6366f1" strokeWidth={2} fill="url(#platEnGrad)"/>
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-gray-900">Platform Revenue</h3>
+            <span className="text-xs text-gray-400">₹ Last 6 months</span>
+          </div>
+          {monthly.length === 0 ? (
+            <div className="h-48 flex items-center justify-center text-gray-400 text-sm">No revenue data yet</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={monthly} margin={{top:5,right:10,bottom:0,left:-10}}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false}/>
+                <XAxis dataKey="label" tick={{fontSize:11,fill:'#9ca3af'}} axisLine={false} tickLine={false}/>
+                <YAxis tick={{fontSize:11,fill:'#9ca3af'}} axisLine={false} tickLine={false}/>
+                <Tooltip contentStyle={{borderRadius:'12px',border:'1px solid #e5e7eb',fontSize:'12px'}}
+                  formatter={(v:any) => [`₹${Number(v).toLocaleString('en-IN')}`,'Revenue']}/>
+                <Bar dataKey="revenue" fill="#10b981" radius={[6,6,0,0]} maxBarSize={40}/>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+
+      {/* Per-organization breakdown */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-gray-900">Organizations Breakdown</h3>
+          <button className="text-xs text-indigo-600 font-semibold flex items-center gap-1"
+            onClick={() => navigate('/dashboard/organizations')}>Manage all <ChevronRight className="w-3.5 h-3.5"/></button>
+        </div>
+        {orgBreakdown.length === 0 ? (
+          <p className="text-center py-8 text-gray-400 text-sm">No organizations yet</p>
+        ) : (
+          <div className="space-y-4">
+            {orgBreakdown.map((org: any) => {
+              const maxStudents = Math.max(...orgBreakdown.map((o: any) => o.studentCount), 1);
+              const pct = (org.studentCount / maxStudents) * 100;
+              return (
+                <div key={org.id} className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm flex-shrink-0 overflow-hidden"
+                    style={{ background: org.primaryColor ?? '#6366f1' }}>
+                    {org.logoUrl ? <img src={org.logoUrl} alt={org.name} className="w-full h-full object-cover"/> : org.name?.[0]}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-sm font-semibold text-gray-800 truncate">{org.name}</p>
+                      <div className="flex items-center gap-3 text-xs text-gray-400 flex-shrink-0">
+                        <span>{org.studentCount} students</span>
+                        <span>{org.courseCount} courses</span>
+                        <span className="font-semibold text-emerald-600">₹{Number(org.revenue).toLocaleString('en-IN')}</span>
+                      </div>
+                    </div>
+                    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: org.primaryColor ?? '#6366f1' }}/>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Recent activity across all orgs */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-gray-900">Recently Added Students</h3>
+            <span className="text-xs text-gray-400">All organizations</span>
+          </div>
+          {recentStudents.length === 0 ? (
+            <div className="text-center py-8 text-gray-400 text-sm">No students yet</div>
+          ) : (
+            <div className="space-y-3">
+              {recentStudents.map((u:any) => (
+                <div key={u.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-black flex-shrink-0 bg-gradient-to-br from-indigo-500 to-purple-600">
+                    {u.firstName?.[0]}{u.lastName?.[0]}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800 truncate">{u.firstName} {u.lastName}</p>
+                    <p className="text-xs text-gray-400 truncate">{u.organizationName}</p>
+                  </div>
+                  <span className="text-xs text-gray-400 flex-shrink-0">{new Date(u.createdAt).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-gray-900">Recently Added Courses</h3>
+            <span className="text-xs text-gray-400">All organizations</span>
+          </div>
+          {recentCourses.length === 0 ? (
+            <div className="text-center py-8 text-gray-400 text-sm">No courses yet</div>
+          ) : (
+            <div className="space-y-3">
+              {recentCourses.map((c:any) => (
+                <div key={c.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors">
+                  <div className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-black flex-shrink-0 bg-gradient-to-br from-emerald-500 to-teal-600">
+                    <BookOpen className="w-4 h-4"/>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800 truncate">{c.title}</p>
+                    <p className="text-xs text-gray-400 truncate">{c.organizationName} · {c.enrollmentCount ?? 0} enrolled</p>
+                  </div>
+                  <span className="text-xs text-gray-400 flex-shrink-0">{new Date(c.createdAt).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// OrgAdmin / Instructor view — single org stats (unchanged from before)
+// ════════════════════════════════════════════════════════════════════════════
+function OrgDashboard() {
   const { user } = useAuthStore();
   const navigate = useNavigate();
 
   const { data, isLoading } = useQuery({
     queryKey: ['org-dash', user?.organizationId],
-queryFn: async () => {
+    queryFn: async () => {
       const orgId = user!.organizationId;
       if (!orgId) return {};
       return dashboardApi.org(orgId).then(r => r.data);
@@ -27,7 +245,6 @@ queryFn: async () => {
   });
 
   const d = data as any;
-  const primary = 'var(--org-primary)';
 
   const stats = [
     { label: 'Total Students',    value: d?.students      ?? 0, icon: Users,       color: 'text-blue-600',   bg: 'bg-blue-50',   change: '+12%' },
@@ -75,7 +292,6 @@ queryFn: async () => {
 
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Monthly enrollments */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-gray-900">Monthly Enrollments</h3>
@@ -103,7 +319,6 @@ queryFn: async () => {
           )}
         </div>
 
-        {/* Monthly revenue */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-gray-900">Monthly Revenue</h3>
@@ -128,7 +343,6 @@ queryFn: async () => {
 
       {/* Bottom row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Top courses */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-gray-900">Top Courses</h3>
@@ -157,7 +371,6 @@ queryFn: async () => {
           )}
         </div>
 
-        {/* Recent students */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-gray-900">Recent Students</h3>
@@ -187,4 +400,13 @@ queryFn: async () => {
       </div>
     </div>
   );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Entry point — route to the right dashboard based on role
+// ════════════════════════════════════════════════════════════════════════════
+export default function AdminDashboard() {
+  const { user } = useAuthStore();
+  if (user?.role === 'SuperAdmin') return <SuperAdminDashboard/>;
+  return <OrgDashboard/>;
 }

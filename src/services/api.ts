@@ -23,8 +23,14 @@ api.interceptors.response.use(
   r => r,
   err => {
     if (err.response?.status === 401) {
+      // Clear both the raw token AND the Zustand-persisted auth store key.
+      // Without clearing 'lms_auth' too, isAuthenticated stays true after
+      // reload and the app silently logs the user back in to their real
+      // role's dashboard — which looks like a confusing "bounce back"
+      // instead of a clean logout.
       localStorage.removeItem('lms_token');
       localStorage.removeItem('lms_user');
+      localStorage.removeItem('lms_auth');
       window.location.href = '/login';
     }
     return Promise.reject(err);
@@ -222,12 +228,12 @@ export const liveClassApi = {
 };
 
 export const mockTestApi = {
-  getAll:         (p?: object) => api.get('/mocktests', { params: p }),
-  get:            (id: number) => api.get(`/mocktests/${id}`),
-  create:         (d: object) => api.post('/mocktests', d),
-  update:         (id: number, d: object) => api.put(`/mocktests/${id}`, d),
+  getAll:     (params: object) => api.get('/mocktests', { params }),
+  get:        (id: number)     => api.get(`/mocktests/${id}`),
+  create:     (d: object)      => api.post('/mocktests', d),
+  update:     (id: number, d: object) => api.put(`/mocktests/${id}`, d),
+  delete:     (id: number)     => api.delete(`/mocktests/${id}`),
   publish:        (id: number) => api.put(`/mocktests/${id}/publish`),
-  delete:         (id: number) => api.delete(`/mocktests/${id}`),
   addQuestion:    (testId: number, d: object) => api.post(`/mocktests/${testId}/questions`, d),
   updateQuestion: (qId: number, d: object)   => api.put(`/mocktests/questions/${qId}`, d),
   deleteQuestion: (qId: number) => api.delete(`/mocktests/questions/${qId}`),
@@ -245,4 +251,16 @@ export const interviewApi = {
   create:         (d: object) => api.post('/interviews', d),
   update:         (id: number, d: object) => api.put(`/interviews/${id}`, d),
   delete:         (id: number) => api.delete(`/interviews/${id}`),
+};
+
+export const batchApi = {
+  getAll:          (orgId: number)               => api.get('/batches', { params: { orgId } }),
+  get:             (id: number)                  => api.get(`/batches/${id}`),
+  create:          (d: object)                   => api.post('/batches', d),
+  update:          (id: number, d: object)       => api.put(`/batches/${id}`, d),
+  delete:          (id: number)                  => api.delete(`/batches/${id}`),
+  getActive:       (orgId: number)               => api.get('/batches/active', { params: { orgId } }),
+  addStudent:      (batchId: number, d: object)  => api.post(`/batches/${batchId}/students`, d),
+  removeStudent:   (batchId: number, sid: number)=> api.delete(`/batches/${batchId}/students/${sid}`),
+  updatePayment:   (batchId: number, sid: number, d: object) => api.put(`/batches/${batchId}/students/${sid}/payment`, d),
 };

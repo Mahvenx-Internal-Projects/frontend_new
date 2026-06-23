@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, BrowserRouter } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
+import { useIdleLogout } from './hooks/useIdleLogout';
 import OrgGate from './components/OrgGate';
 import DashboardLayout from './components/shared/DashboardLayout';
 import GlobalLoader from './components/shared/GlobalLoader';
@@ -22,6 +23,7 @@ import HomePageEditorPage   from './pages/admin/HomePageEditorPage';
 import PaymentTransactionsPage from './pages/admin/PaymentTransactionsPage';
 import LessonEditorPage     from './pages/admin/LessonEditorPage';
 import MockTestEditorPage   from './pages/admin/MockTestEditorPage';
+import TrainingBatchPage    from './pages/admin/TrainingBatchPage';
 
 // Trainer
 import TrainerDashboard     from './pages/trainer/TrainerDashboard';
@@ -37,7 +39,7 @@ import OrdersPage           from './pages/student/OrdersPage';
 import MyCertificates       from './pages/student/MyCertificates';
 import TrainingSchedulePage from './pages/student/TrainingSchedulePage';
 import InterviewSchedulePage from './pages/student/InterviewSchedulePage';
-import CoursePlayerPage     from './pages/student/CoursePlayerPage';
+import LessonPlayerPage     from './pages/student/LessonPlayerPage';
 
 // Mock tests
 import MockTestsListPage    from './pages/student/mock/MockTestsListPage';
@@ -47,6 +49,8 @@ import MockTestAnalysisPage from './pages/student/mock/MockTestAnalysisPage';
 // Portal
 import PublicCourseDetailPage from './pages/portal/PublicCourseDetailPage';
 import DynamicHomePage       from './pages/portal/DynamicHomePage';
+import AboutUsPage           from './pages/portal/AboutUsPage';
+import ContactUsPage         from './pages/portal/ContactUsPage';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, _hydrated } = useAuthStore();
@@ -70,11 +74,20 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Mounted once inside <BrowserRouter> so useNavigate works correctly.
+// Watches for inactivity across the whole app and logs the user out
+// after 30 minutes with no mouse/keyboard/scroll/touch activity.
+function IdleLogoutWatcher() {
+  useIdleLogout();
+  return null;
+}
+
 export default function App() {
   return (
     <>
       <GlobalLoader />
       <BrowserRouter>
+        <IdleLogoutWatcher />
         <OrgGate>
           <Routes>
             {/* ─── Auth ─────────────────────────────────── */}
@@ -83,7 +96,7 @@ export default function App() {
 
             {/* ─── Course Player (fullscreen, no sidebar) ─ */}
             <Route path="/learn/:courseId/lesson/:lessonId"
-              element={<RequireAuth><CoursePlayerPage /></RequireAuth>} />
+              element={<RequireAuth><LessonPlayerPage /></RequireAuth>} />
 
             {/* ─── Dashboard ────────────────────────────── */}
             <Route path="/dashboard" element={<RequireAuth><DashboardLayout /></RequireAuth>}>
@@ -126,12 +139,15 @@ export default function App() {
               <Route path="cart"         element={<CartPage />} />
               <Route path="orders"       element={<OrdersPage />} />
               <Route path="certificates" element={<MyCertificates />} />
-              <Route path="live-classes" element={<TrainingSchedulePage />} />
+              <Route path="live-classes"      element={<TrainingSchedulePage />} />
+              <Route path="training-batches" element={<TrainingBatchPage />} />
               <Route path="interviews"   element={<InterviewSchedulePage />} />
             </Route>
 
             {/* ─── Public portal ────────────────────────── */}
             <Route path="/course/:courseId" element={<PublicCourseDetailPage />} />
+            <Route path="/about"   element={<AboutUsPage />} />
+            <Route path="/contact" element={<ContactUsPage />} />
             <Route path="/"       element={<DynamicHomePage />} />
             <Route path="/:slug"  element={<DynamicHomePage />} />
             <Route path="*"       element={<Navigate to="/" replace />} />
