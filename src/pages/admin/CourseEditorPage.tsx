@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Save, ChevronLeft, Plus, Trash2, Eye,
+  Save, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Eye,
   BookOpen, Video, Music, FileText, Globe, Lock, Pencil
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -25,6 +25,97 @@ function fmtSecs(s: number) {
   return m ? `${m}m ${sec}s` : `${sec}s`;
 }
 
+// ─── Recursive lesson tree row ──────────────────────────────────────────
+// Renders a lesson, then recursively renders its childLessons indented one
+// level deeper. Each row offers "+ Sub-lesson" to add a child at any depth,
+// so the tree can nest infinitely (Lesson → Sub-lesson → Sub-sub-lesson...).
+function LessonTreeRow({ lesson, depth, courseId, moduleId, navigate, onDelete, onAddChild }: {
+  lesson: any; depth: number; courseId: string | number; moduleId: number;
+  navigate: (path: string) => void;
+  onDelete: (lessonId: number) => void;
+  onAddChild: (parentLessonId: number) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const children: any[] = lesson.lessons ?? lesson.childLessons ?? [];
+  const hasChildren = children.length > 0;
+
+  return (
+    <>
+      <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-50 hover:bg-gray-50 group transition-colors"
+        style={{ paddingLeft: `${20 + depth * 24}px` }}>
+        {/* Expand/collapse caret — only shown when this lesson has children */}
+        {hasChildren ? (
+          <button type="button" onClick={() => setExpanded(e => !e)}
+            className="flex-shrink-0 p-0.5 rounded hover:bg-gray-200 text-gray-400">
+            {expanded ? <ChevronDown className="w-3.5 h-3.5"/> : <ChevronRight className="w-3.5 h-3.5"/>}
+          </button>
+        ) : (
+          <span className="w-4 flex-shrink-0" />
+        )}
+
+        {/* Type icon */}
+        <div className={clsx('w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0',
+          lesson.type==='Video'   ? 'bg-purple-100 text-purple-600' :
+          lesson.type==='Audio'   ? 'bg-amber-100 text-amber-600' :
+          lesson.type==='Article' ? 'bg-blue-100 text-blue-600' :
+          'bg-gray-100 text-gray-500')}>
+          {lesson.type==='Video'   ? <Video className="w-4 h-4"/> :
+           lesson.type==='Audio'   ? <Music className="w-4 h-4"/> :
+           lesson.type==='Article' ? <FileText className="w-4 h-4"/> :
+           <BookOpen className="w-4 h-4"/>}
+        </div>
+
+        {/* Title + meta */}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-800 truncate">{lesson.title}</p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className="text-xs text-gray-400">{lesson.type}</span>
+            {lesson.durationSecs > 0 && <span className="text-xs text-gray-400">· {fmtSecs(lesson.durationSecs)}</span>}
+            {(lesson.contentBlocksCount > 0) && (
+              <span className="text-xs bg-blue-50 text-blue-600 px-1.5 rounded font-medium">
+                {lesson.contentBlocksCount} block{lesson.contentBlocksCount !== 1 ? 's' : ''}
+              </span>
+            )}
+            {hasChildren && (
+              <span className="text-xs bg-purple-50 text-purple-600 px-1.5 rounded font-medium">
+                {children.length} sub-lesson{children.length !== 1 ? 's' : ''}
+              </span>
+            )}
+            {lesson.isPreview && <span className="text-xs bg-green-100 text-green-600 px-1.5 rounded font-semibold">Free</span>}
+            {!lesson.isPublished && <span className="text-xs bg-gray-100 text-gray-400 px-1.5 rounded">Draft</span>}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+          <button type="button"
+            onClick={() => onAddChild(lesson.id)}
+            className="p-2 rounded-lg hover:bg-purple-100 text-purple-500 transition-colors" title="Add sub-lesson">
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+          <button type="button"
+            onClick={() => navigate(`/dashboard/courses/${courseId}/lesson/${lesson.id}/edit`)}
+            className="p-2 rounded-lg hover:bg-blue-100 text-blue-500 transition-colors" title="Edit lesson">
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+          <button type="button"
+            onClick={() => onDelete(lesson.id)}
+            className="p-2 rounded-lg hover:bg-red-100 text-red-400 transition-colors" title="Delete lesson and all sub-lessons">
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Recursively render children, indented one level deeper */}
+      {hasChildren && expanded && children.map((child: any) => (
+        <LessonTreeRow key={child.id} lesson={child} depth={depth + 1}
+          courseId={courseId} moduleId={moduleId} navigate={navigate}
+          onDelete={onDelete} onAddChild={onAddChild} />
+      ))}
+    </>
+  );
+}
+
 export default function CourseEditorPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -36,7 +127,7 @@ export default function CourseEditorPage() {
   const [courseForm, setCF] = useState({
     title: '', description: '', level: 'Beginner', status: 'Draft',
     price: '0', isFree: true, categoryId: '', thumbnailUrl: '', tags: '', language: 'English',
-    instructorId: ''
+    instructorId: '', enforceSequentialLessons: false
   });
 
   // Module state
@@ -59,7 +150,8 @@ export default function CourseEditorPage() {
       price: String(courseData.price ?? 0), isFree: courseData.isFree ?? true,
       categoryId: String(courseData.categoryId ?? ''), thumbnailUrl: courseData.thumbnailUrl ?? '',
       tags: courseData.tags ?? '', language: courseData.language ?? 'English',
-      instructorId: String(courseData.instructorId ?? '')
+      instructorId: String(courseData.instructorId ?? ''),
+      enforceSequentialLessons: courseData.enforceSequentialLessons ?? false
     });
   }, [courseData]);
 
@@ -75,11 +167,32 @@ export default function CourseEditorPage() {
     queryFn: () => categoriesApi.getAll(user?.organizationId).then(r => r.data),
   });
 
+ 
+const isInstructorRole = user?.role === 'Instructor';
+
   const { data: instructorsRaw = [] } = useQuery({
     queryKey: ['instructors'],
     queryFn: () => usersApi.getAll({ role: 'Instructor', size: 100 }).then(r => (r.data as any).items ?? []),
+    enabled: !isInstructorRole,
   });
   const instructors = instructorsRaw as any[];
+
+  useEffect(() => {
+    if (isInstructorRole && user?.id && !courseForm.instructorId) {
+      setCF(f => ({ ...f, instructorId: String(user.id) }));
+    }
+  }, [isInstructorRole, user?.id]);
+  // Rich text editors store "empty" content as HTML like '<p></p>' or
+  // '<p><br></p>', never a literal empty string — so a plain truthy check
+  // on courseForm.description would always pass even when nothing was
+  // actually typed. Strip tags first to check for real text content.
+  const descriptionIsEmpty = !courseForm.description?.replace(/<[^>]*>/g, '').trim();
+
+  const handleSaveClick = () => {
+    if (!courseForm.title.trim()) { toast.error('Course title is required'); return; }
+    if (descriptionIsEmpty) { toast.error('Course description is required'); return; }
+    saveCourse.mutate();
+  };
 
   const saveCourse = useMutation({
     mutationFn: async () => {
@@ -92,6 +205,7 @@ export default function CourseEditorPage() {
         language: courseForm.language,
         instructorId: Number(courseForm.instructorId) || undefined,
         organizationId: user!.organizationId,
+        enforceSequentialLessons: courseForm.enforceSequentialLessons,
       };
       return isEdit ? coursesApi.update(Number(id), payload) : coursesApi.create(payload);
     },
@@ -139,8 +253,8 @@ export default function CourseEditorPage() {
               <Eye className="w-4 h-4" /> Preview
             </button>
           )}
-          <button className="btn-primary" onClick={() => saveCourse.mutate()}
-            disabled={!courseForm.title || saveCourse.isPending}>
+          <button className="btn-primary" onClick={handleSaveClick}
+            disabled={!courseForm.title || descriptionIsEmpty || saveCourse.isPending}>
             <Save className="w-4 h-4" /> {saveCourse.isPending ? 'Saving…' : 'Save Course'}
           </button>
         </div>
@@ -170,7 +284,7 @@ export default function CourseEditorPage() {
               </div>
               <div>
                 <RichTextEditor
-                  label="Description"
+                  label="Description *"
                   value={courseForm.description}
                   onChange={val => setCF(f => ({...f, description: val}))}
                   placeholder="What will students learn? Describe outcomes, prerequisites, and why this course is unique…"
@@ -211,11 +325,21 @@ export default function CourseEditorPage() {
               </div>
               <div>
                 <label className="label">Instructor</label>
-                <select className="input" value={courseForm.instructorId} onChange={e => setCF(f => ({...f, instructorId: e.target.value}))}>
-                  <option value="">Select instructor</option>
-                  {instructors.map((i: any) => <option key={i.id} value={i.id}>{i.firstName} {i.lastName}</option>)}
-                </select>
+                {isInstructorRole ? (
+                  <div className="input bg-gray-50 text-gray-600 flex items-center gap-2 cursor-default">
+                    <span className="w-5 h-5 rounded-full bg-[var(--org-primary)] text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">
+                      {user?.firstName?.[0]}{user?.lastName?.[0]}
+                    </span>
+                    {user?.firstName} {user?.lastName} (you)
+                  </div>
+                ) : (
+                  <select className="input" value={courseForm.instructorId} onChange={e => setCF(f => ({...f, instructorId: e.target.value}))}>
+                    <option value="">Select instructor</option>
+                    {instructors.map((i: any) => <option key={i.id} value={i.id}>{i.firstName} {i.lastName}</option>)}
+                  </select>
+                )}
               </div>
+           
               <div>
                 <label className="label">Pricing</label>
                 <div className="flex gap-2 mb-2">
@@ -247,6 +371,28 @@ export default function CourseEditorPage() {
                     </button>
                   ))}
                 </div>
+              </div>
+              <div>
+                <label className="label flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5"/> Sequential Lessons
+                </label>
+                <button type="button"
+                  onClick={() => setCF(f => ({ ...f, enforceSequentialLessons: !f.enforceSequentialLessons }))}
+                  className={clsx('w-full flex items-center justify-between px-4 py-2.5 rounded-xl border-2 transition-all',
+                    courseForm.enforceSequentialLessons ? 'border-[var(--org-primary)] bg-[var(--org-primary)]/10' : 'border-gray-200')}>
+                  <span className="text-sm text-gray-700">
+                    {courseForm.enforceSequentialLessons
+                      ? 'Students must finish each lesson before the next unlocks'
+                      : 'Students can watch lessons in any order'}
+                  </span>
+                  <div className={clsx('w-10 h-5.5 rounded-full relative transition-colors flex-shrink-0',
+                    courseForm.enforceSequentialLessons ? 'bg-[var(--org-primary)]' : 'bg-gray-300')}
+                    style={{ width: '40px', height: '22px' }}>
+                    <div className={clsx('absolute top-0.5 left-0.5 w-4.5 h-4.5 rounded-full bg-white shadow transition-transform',
+                      courseForm.enforceSequentialLessons && 'translate-x-[18px]')}
+                      style={{ width: '18px', height: '18px' }} />
+                  </div>
+                </button>
               </div>
             </div>
 
@@ -331,50 +477,12 @@ export default function CourseEditorPage() {
                           </button>
                         </div>
                       ) : (
-                        (mod.lessons ?? []).map((lesson: any, li: number) => (
-                          <div key={lesson.id}
-                            className="flex items-center gap-3 px-5 py-3 border-b border-gray-50 hover:bg-gray-50 group transition-colors">
-                            <span className="text-gray-300 text-xs w-5 text-center flex-shrink-0">{li + 1}</span>
-                            {/* Type icon */}
-                            <div className={clsx('w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0',
-                              lesson.type==='Video'   ? 'bg-purple-100 text-purple-600' :
-                              lesson.type==='Audio'   ? 'bg-amber-100 text-amber-600' :
-                              lesson.type==='Article' ? 'bg-blue-100 text-blue-600' :
-                              'bg-gray-100 text-gray-500')}>
-                              {lesson.type==='Video'   ? <Video className="w-4 h-4"/> :
-                               lesson.type==='Audio'   ? <Music className="w-4 h-4"/> :
-                               lesson.type==='Article' ? <FileText className="w-4 h-4"/> :
-                               <BookOpen className="w-4 h-4"/>}
-                            </div>
-                            {/* Title + meta */}
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold text-gray-800 truncate">{lesson.title}</p>
-                              <div className="flex items-center gap-2 mt-0.5">
-                                <span className="text-xs text-gray-400">{lesson.type}</span>
-                                {lesson.durationSecs > 0 && <span className="text-xs text-gray-400">· {fmtSecs(lesson.durationSecs)}</span>}
-                                {(lesson.contentBlocksCount > 0) && (
-                                  <span className="text-xs bg-blue-50 text-blue-600 px-1.5 rounded font-medium">
-                                    {lesson.contentBlocksCount} block{lesson.contentBlocksCount !== 1 ? 's' : ''}
-                                  </span>
-                                )}
-                                {lesson.isPreview && <span className="text-xs bg-green-100 text-green-600 px-1.5 rounded font-semibold">Free</span>}
-                                {!lesson.isPublished && <span className="text-xs bg-gray-100 text-gray-400 px-1.5 rounded">Draft</span>}
-                              </div>
-                            </div>
-                            {/* Actions */}
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                              <button type="button"
-                                onClick={() => navigate(`/dashboard/courses/${id}/lesson/${lesson.id}/edit`)}
-                                className="p-2 rounded-lg hover:bg-blue-100 text-blue-500 transition-colors" title="Edit lesson">
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                              <button type="button"
-                                onClick={() => deleteLesson(lesson.id)}
-                                className="p-2 rounded-lg hover:bg-red-100 text-red-400 transition-colors" title="Delete lesson">
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
+                        (mod.lessons ?? []).map((lesson: any) => (
+                          <LessonTreeRow key={lesson.id} lesson={lesson} depth={0}
+                            courseId={id!} moduleId={mod.id} navigate={navigate}
+                            onDelete={deleteLesson}
+                            onAddChild={(parentLessonId) =>
+                              navigate(`/dashboard/courses/${id}/lesson/new?moduleId=${mod.id}&parentLessonId=${parentLessonId}`)} />
                         ))
                       )}
                       <div className="px-5 py-3 border-t border-gray-50">

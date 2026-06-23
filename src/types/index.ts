@@ -52,6 +52,8 @@ export interface Lesson {
   type: LessonType; durationSecs: number; displayOrder: number;
   isPreview: boolean; isPublished: boolean; moduleId: number;
   progress?: LessonProgress;
+  parentLessonId?: number | null;
+  childLessons?: Lesson[];
 }
 
 export interface LessonProgress {

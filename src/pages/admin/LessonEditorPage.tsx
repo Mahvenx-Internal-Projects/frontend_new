@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Save, Plus, Trash2, GripVertical,
   ChevronUp, ChevronDown, Eye, EyeOff, CheckCircle2,
@@ -160,12 +161,21 @@ function BlockEditor({ block, onChange }: { block: Block; onChange: (b: Block) =
                   value={block.videoTitle ?? ''} onChange={e => u({ videoTitle: e.target.value })} />
               </div>
               <div>
-                <label className="label text-xs">Duration in seconds</label>
+                <label className="label text-xs">
+                  Duration in seconds <span className="text-red-500">*</span>
+                </label>
                 <div className="flex gap-2 items-center">
-                  <input className="input text-sm" type="number" min={0} placeholder="e.g. 900"
+                  <input
+                    className={clsx('input text-sm', !block.videoDurationSecs && 'border-amber-400 bg-amber-50')}
+                    type="number" min={0} placeholder="e.g. 900"
                     value={block.videoDurationSecs ?? ''} onChange={e => u({ videoDurationSecs: +e.target.value })} />
                   <span className="text-xs text-gray-400 whitespace-nowrap">{fmtSecs(block.videoDurationSecs ?? 0)}</span>
                 </div>
+                {!block.videoDurationSecs && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    Required — without this, students can mark the lesson complete instantly with no minimum watch time enforced.
+                  </p>
+                )}
               </div>
             </div>
             {/* Preview */}
@@ -307,7 +317,9 @@ export default function LessonEditorPage() {
   const { courseId, lessonId } = useParams<{ courseId: string; lessonId?: string }>();
   const [searchParams] = useSearchParams();
   const moduleId = searchParams.get('moduleId');
+  const parentLessonId = searchParams.get('parentLessonId');
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const isNew = !lessonId || lessonId === 'new';
 
   const [meta, setMeta] = useState({
@@ -337,13 +349,18 @@ export default function LessonEditorPage() {
 
   const save = async () => {
     if (!meta.title.trim()) { toast.error('Lesson title is required'); return; }
+    const missingDuration = blocks.some(b => b.type === 'Video' && b.videoUrl && !b.videoDurationSecs);
+    if (missingDuration) {
+      toast.error('Please set the duration for every video block before saving');
+      return;
+    }
     setSaving(true);
     try {
       let id: number;
       if (isNew) {
         const res = await fetch(`${API_BASE}/api/lessons`, {
           method: 'POST', headers: authHeaders(),
-          body: JSON.stringify({ ...meta, type: 'Mixed', displayOrder: 0, moduleId: Number(moduleId), videoUrl: null, fileUrl: null, content: null })
+          body: JSON.stringify({ ...meta, type: 'Mixed', displayOrder: 0, moduleId: Number(moduleId), parentLessonId: parentLessonId ? Number(parentLessonId) : null, videoUrl: null, fileUrl: null, content: null })
         });
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
@@ -362,6 +379,12 @@ export default function LessonEditorPage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
       toast.success(isNew ? 'Lesson created!' : 'Lesson saved!');
+      // Without this, navigating back to the Course Editor showed stale
+      // module/lesson data from React Query's cache — the newly added
+      // lesson only appeared after some OTHER action happened to trigger
+      // a refetch (e.g. editing a different field). Invalidating here
+      // forces a fresh fetch the moment we land back on that page.
+      qc.invalidateQueries({ queryKey: ['course-modules', courseId] });
       if (isNew) {
         navigate(`/dashboard/courses/${courseId}/lesson/${id}/edit`, { replace: true });
       }
@@ -424,7 +447,10 @@ export default function LessonEditorPage() {
               <h1 className="font-black text-gray-900 truncate text-base">
                 {meta.title || (isNew ? 'New Lesson' : 'Edit Lesson')}
               </h1>
-              <p className="text-xs text-gray-400">{blocks.length} block{blocks.length !== 1 ? 's' : ''}{totalDuration > 0 ? ` · ${fmtSecs(totalDuration)}` : ''}</p>
+              <p className="text-xs text-gray-400">
+                {blocks.length} block{blocks.length !== 1 ? 's' : ''}{totalDuration > 0 ? ` · ${fmtSecs(totalDuration)}` : ''}
+                {isNew && parentLessonId && <span className="text-purple-500 font-semibold"> · Adding as sub-lesson</span>}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
