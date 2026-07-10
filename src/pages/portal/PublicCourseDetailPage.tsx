@@ -3,12 +3,13 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Star, Users, Clock, Globe, Lock, Play, Award,
   CheckCircle2, ChevronLeft, ChevronDown, ChevronRight,
-  BookOpen, Video, FileText, ArrowRight, Share2
+  BookOpen, Video, FileText, ArrowRight, Share2, X
 } from 'lucide-react';
 import { useState } from 'react';
 import { useOrgStore } from '../../store/orgStore';
 import { useAuthStore } from '../../store/authStore';
 import { portalApi, type PublicCourse } from '../../services/portalApi';
+import VideoPlayer from '../../components/shared/VideoPlayer';
 import clsx from 'clsx';
 
 export default function PublicCourseDetailPage() {
@@ -18,6 +19,10 @@ export default function PublicCourseDetailPage() {
   const { isAuthenticated } = useAuthStore();
   const [expandedMods, setExpandedMods] = useState<Set<number>>(new Set([0]));
   const [copied, setCopied] = useState(false);
+  // Holds whichever free-preview lesson the visitor clicked "Preview" on.
+  // No auth/enrollment check at all — this is intentionally open so
+  // anyone browsing the course can sample it before signing up.
+  const [previewLesson, setPreviewLesson] = useState<{ id: number; title: string; videoUrl?: string; content?: string } | null>(null);
 
   const { data: course, isLoading } = useQuery<PublicCourse>({
     queryKey: ['public-course', courseId],
@@ -172,7 +177,10 @@ export default function PublicCourseDetailPage() {
                             {lesson.isPreview ? (
                               <button className="text-xs font-semibold flex items-center gap-1 hover:opacity-70 transition-opacity"
                                 style={{ color: 'var(--org-primary)' }}
-                                onClick={() => isAuthenticated ? navigate(`/dashboard/catalog/${course.id}`) : navigate('/register')}>
+                                onClick={() => setPreviewLesson({
+                                  id: lesson.id, title: lesson.title,
+                                  videoUrl: lesson.videoUrl, content: lesson.content
+                                })}>
                                 <Play className="w-3 h-3" /> Preview
                               </button>
                             ) : (
@@ -281,6 +289,42 @@ export default function PublicCourseDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Lesson preview modal — no login/enrollment required ── */}
+      {previewLesson && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+          onClick={() => setPreviewLesson(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div className="flex items-center gap-2 min-w-0">
+                <Play className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--org-primary)' }} />
+                <p className="font-semibold text-gray-900 text-sm truncate">{previewLesson.title}</p>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-600 font-semibold flex-shrink-0">Free Preview</span>
+              </div>
+              <button onClick={() => setPreviewLesson(null)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 flex-shrink-0">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-0">
+              {previewLesson.videoUrl ? (
+                <VideoPlayer src={previewLesson.videoUrl} title={previewLesson.title} />
+              ) : previewLesson.content ? (
+                <div className="p-6 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: previewLesson.content }} />
+              ) : (
+                <div className="p-10 text-center text-gray-400 text-sm">Preview content isn't available for this lesson yet.</div>
+              )}
+            </div>
+            <div className="px-5 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+              <p className="text-xs text-gray-500">Like what you see? Enroll to unlock the full course.</p>
+              <button onClick={() => isAuthenticated ? navigate(`/dashboard/catalog/${course?.id}`) : navigate('/register')}
+                className="text-xs font-semibold px-4 py-2 rounded-xl text-white"
+                style={{ background: 'var(--org-primary)' }}>
+                {isAuthenticated ? 'Go to course' : 'Sign up to enroll'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

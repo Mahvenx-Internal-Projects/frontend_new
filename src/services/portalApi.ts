@@ -6,7 +6,7 @@ const isLocal = typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 const PORTAL_BASE = isLocal
   ? '/api'
-  : (import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'https://api.worksupport360.com/api');
+  : (import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'https://lms.worksupport360.com/api');
 
 const portalAxios = axios.create({
   baseURL: PORTAL_BASE,
@@ -48,6 +48,9 @@ export const portalApi = {
 
   getInstructors: (orgId: number) =>
     portalAxios.get(`/portal/${orgId}/instructors`),
+
+  getReviews: (orgId: number, limit = 9) =>
+    portalAxios.get(`/portal/${orgId}/reviews`, { params: { limit } }),
 };
 
 export type PublicCategory = {
@@ -74,6 +77,7 @@ export type PublicModule = {
 export type PublicLesson = {
   id: number; title: string; type: string;
   durationSecs: number; isPreview: boolean;
+  videoUrl?: string; content?: string;
 };
 
 export type OrgStats = {

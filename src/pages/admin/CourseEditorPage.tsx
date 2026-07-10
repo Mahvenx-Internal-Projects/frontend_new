@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Save, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Eye,
-  BookOpen, Video, Music, FileText, Globe, Lock, Pencil
+  BookOpen, Video, Music, FileText, Globe, Lock, Pencil, ClipboardList, Link2, AlertTriangle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { coursesApi, categoriesApi, usersApi } from '../../services/api';
+import { coursesApi, categoriesApi, usersApi, mockTestApi } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import Modal from '../../components/shared/Modal';
 import FileUpload from '../../components/shared/FileUpload';
@@ -23,6 +23,46 @@ function fmtSecs(s: number) {
   const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
   if (h) return `${h}h ${m}m`;
   return m ? `${m}m ${sec}s` : `${sec}s`;
+}
+
+// Counts lessons at every depth of the tree, not just root-level — so the
+// "X lessons" summary in the preview matches what a student would
+// actually see, including sub-lessons.
+function countLessonsDeep(lessons: any[]): number {
+  return lessons.reduce((sum, l) => sum + 1 + countLessonsDeep(l.lessons ?? l.childLessons ?? []), 0);
+}
+
+// Sums durationSecs across every lesson at every depth — gives the
+// course's real total runtime, not just the root-level lessons.
+function sumDurationDeep(lessons: any[]): number {
+  return lessons.reduce((sum, l) => sum + (l.durationSecs ?? 0) + sumDurationDeep(l.lessons ?? l.childLessons ?? []), 0);
+}
+
+// Read-only recursive row for the Preview tab's curriculum — mirrors
+// LessonTreeRow's structure but without any edit/delete actions, since
+// this is purely a "what will the student see" preview.
+function PreviewLessonRow({ lesson, depth }: { lesson: any; depth: number }) {
+  const children: any[] = lesson.lessons ?? lesson.childLessons ?? [];
+  return (
+    <>
+      <div className="flex items-center gap-2 text-sm text-gray-600 py-1.5 border-b border-gray-50"
+        style={{ paddingLeft: `${depth * 20}px` }}>
+        {lesson.type==='Video' ? <Video className="w-3.5 h-3.5 text-purple-400 flex-shrink-0"/> :
+         lesson.type==='Audio' ? <Music className="w-3.5 h-3.5 text-amber-400 flex-shrink-0"/> :
+         lesson.type==='PDF'   ? <FileText className="w-3.5 h-3.5 text-red-400 flex-shrink-0"/> :
+         <FileText className="w-3.5 h-3.5 text-blue-400 flex-shrink-0"/>}
+        <span className="flex-1">{lesson.title}</span>
+        {children.length > 0 && (
+          <span className="text-xs text-purple-400">{children.length} sub-lesson{children.length !== 1 ? 's' : ''}</span>
+        )}
+        {lesson.durationSecs > 0 && <span className="text-xs text-gray-400">{fmtSecs(lesson.durationSecs)}</span>}
+        {lesson.isPreview && <span className="text-xs text-green-600 font-semibold">Free</span>}
+      </div>
+      {children.map((child: any) => (
+        <PreviewLessonRow key={child.id} lesson={child} depth={depth + 1} />
+      ))}
+    </>
+  );
 }
 
 // ─── Recursive lesson tree row ──────────────────────────────────────────
@@ -118,20 +158,29 @@ function LessonTreeRow({ lesson, depth, courseId, moduleId, navigate, onDelete, 
 
 export default function CourseEditorPage() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const qc = useQueryClient();
   const isEdit = !!id;
 
-  const [activeTab, setActiveTab] = useState<'info'|'content'|'preview'>('info');
+  const tabFromUrl = searchParams.get('tab');
+  const moduleFromUrl = searchParams.get('moduleId');
+  const [activeTab, setActiveTab] = useState<'info'|'content'|'assessment'|'preview'>(
+    tabFromUrl === 'content' || tabFromUrl === 'preview' || tabFromUrl === 'assessment' ? tabFromUrl : 'info'
+  );
   const [courseForm, setCF] = useState({
     title: '', description: '', level: 'Beginner', status: 'Draft',
     price: '0', isFree: true, categoryId: '', thumbnailUrl: '', tags: '', language: 'English',
     instructorId: '', enforceSequentialLessons: false
   });
 
-  // Module state
-  const [expandedModule, setExpandedModule] = useState<number | null>(null);
+  // Module state — auto-expand the module specified in the URL param
+  // (set when navigating back from lesson editor) so the updated
+  // sub-lesson tree is immediately visible without a manual click.
+  const [expandedModule, setExpandedModule] = useState<number | null>(
+    moduleFromUrl ? Number(moduleFromUrl) : null
+  );
   const [modModal, setModModal] = useState(false);
   const [modForm, setMF] = useState({ title: '', description: '' });
 
@@ -162,14 +211,52 @@ export default function CourseEditorPage() {
   });
   const modules = modulesRaw as any[];
 
+  // Auto-expand the first module when modules load for the first time
+  // and no specific module was requested via URL — so the tree is never
+  // completely hidden (all collapsed) by default.
+  useEffect(() => {
+    if (modules.length > 0 && expandedModule === null && !moduleFromUrl) {
+      setExpandedModule(modules[0].id);
+    }
+  }, [modules.length]);
+
   const { data: categories = [] } = useQuery({
     queryKey: ['cats-all'],
     queryFn: () => categoriesApi.getAll(user?.organizationId).then(r => r.data),
   });
 
- 
-const isInstructorRole = user?.role === 'Instructor';
+  // All published exams in this org (for the "assign exam" dropdown)
+  const { data: allExams = [] } = useQuery({
+    queryKey: ['exams-org', user?.organizationId],
+    queryFn: () => mockTestApi.getAll({ orgId: user?.organizationId }).then((r: any) => r.data?.items ?? r.data ?? []),
+    enabled: !!user?.organizationId && isEdit,
+  });
 
+  // Exam currently linked to this course
+  const { data: linkedExams = [], refetch: refetchLinkedExam } = useQuery({
+    queryKey: ['exams-course', id],
+    queryFn: () => mockTestApi.getAll({ courseId: Number(id) }).then((r: any) => r.data?.items ?? r.data ?? []),
+    enabled: !!id,
+  });
+  const linkedExam = (linkedExams as any[])[0] ?? null;
+
+  const attachExamMut = useMutation({
+    mutationFn: (examId: number) => mockTestApi.update(examId, { courseId: Number(id) }),
+    onSuccess: () => { toast.success('Exam linked to course!'); refetchLinkedExam(); },
+    onError: () => toast.error('Failed to link exam'),
+  });
+  const detachExamMut = useMutation({
+    mutationFn: (examId: number) => mockTestApi.update(examId, { courseId: null }),
+    onSuccess: () => { toast.success('Exam unlinked'); refetchLinkedExam(); },
+    onError: () => toast.error('Failed to unlink exam'),
+  });
+
+  const isInstructorRole = user?.role === 'Instructor';
+
+  // Instructors aren't authorized to list other users (UsersController is
+  // SuperAdmin/OrgAdmin only) — fetching this for the dropdown would 403.
+  // Since an Instructor can only ever create courses under their own name
+  // anyway, skip the lookup entirely for them.
   const { data: instructorsRaw = [] } = useQuery({
     queryKey: ['instructors'],
     queryFn: () => usersApi.getAll({ role: 'Instructor', size: 100 }).then(r => (r.data as any).items ?? []),
@@ -177,11 +264,14 @@ const isInstructorRole = user?.role === 'Instructor';
   });
   const instructors = instructorsRaw as any[];
 
+  // Auto-assign the logged-in Instructor as the course's instructor —
+  // they never see or use the dropdown, so this must happen here instead.
   useEffect(() => {
     if (isInstructorRole && user?.id && !courseForm.instructorId) {
       setCF(f => ({ ...f, instructorId: String(user.id) }));
     }
   }, [isInstructorRole, user?.id]);
+
   // Rich text editors store "empty" content as HTML like '<p></p>' or
   // '<p><br></p>', never a literal empty string — so a plain truthy check
   // on courseForm.description would always pass even when nothing was
@@ -212,6 +302,7 @@ const isInstructorRole = user?.role === 'Instructor';
     onSuccess: (res: any) => {
       toast.success('Course saved!');
       qc.invalidateQueries({ queryKey: ['courses'] });
+      qc.invalidateQueries({ queryKey: ['course-edit', id] });
       if (!isEdit) navigate(`/dashboard/courses/${res.data.id}/edit`);
     },
     onError: () => toast.error('Failed to save course'),
@@ -262,7 +353,7 @@ const isInstructorRole = user?.role === 'Instructor';
 
       {/* Tabs */}
       <div className="flex border-b border-gray-200 gap-1">
-        {([['info','⚙️ Course Info'],['content','📚 Content'],['preview','👁 Preview']] as const).map(([t,l]) => (
+        {([['info','⚙️ Course Info'],['content','📚 Content'],['assessment','🎯 Assessment'],['preview','👁 Preview']] as const).map(([t,l]) => (
           <button key={t} onClick={() => setActiveTab(t)}
             className={clsx('px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap',
               activeTab===t ? 'border-[var(--org-primary)] text-[var(--org-primary)]' : 'border-transparent text-gray-500 hover:text-gray-700')}>
@@ -339,7 +430,6 @@ const isInstructorRole = user?.role === 'Instructor';
                   </select>
                 )}
               </div>
-           
               <div>
                 <label className="label">Pricing</label>
                 <div className="flex gap-2 mb-2">
@@ -495,6 +585,107 @@ const isInstructorRole = user?.role === 'Instructor';
                   )}
                 </div>
               ))}
+
+              {modules.length > 0 && (
+                <div className="flex justify-center pt-2">
+                  <button type="button" onClick={() => setActiveTab('preview')}
+                    className="btn-secondary">
+                    <Eye className="w-4 h-4" /> Preview Full Course
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ─── ASSESSMENT TAB ───────────────────────────────── */}
+      {activeTab === 'assessment' && (
+        <div className="space-y-5">
+          {!isEdit ? (
+            <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center text-gray-400">
+              Save the course first to assign an assessment.
+            </div>
+          ) : (
+            <>
+              {/* Currently linked exam */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <ClipboardList className="w-4 h-4 text-purple-500" /> Linked Assessment
+                </h3>
+                {linkedExam ? (
+                  <div className="flex items-start justify-between gap-4 p-4 bg-purple-50 border border-purple-200 rounded-2xl">
+                    <div>
+                      <p className="font-bold text-gray-900">{linkedExam.title}</p>
+                      <div className="flex flex-wrap gap-3 mt-1 text-xs text-gray-500">
+                        <span>⏱ {linkedExam.timeLimitMins} min</span>
+                        <span>🎯 {linkedExam.passMarkPercent}% to pass</span>
+                        <span>📝 {linkedExam.totalQuestions || 'All'} questions shown</span>
+                        <span>🔄 Max {linkedExam.maxAttempts} attempt{linkedExam.maxAttempts !== 1 ? 's' : ''}</span>
+                      </div>
+                      <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1 w-fit">
+                        <AlertTriangle className="w-3 h-3" />
+                        Students must complete this course content before the exam unlocks
+                      </div>
+                    </div>
+                    <button onClick={() => detachExamMut.mutate(linkedExam.id)} disabled={detachExamMut.isPending}
+                      className="btn-ghost text-red-500 text-xs shrink-0">
+                      Unlink
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-6 border-2 border-dashed border-gray-200 rounded-2xl text-center text-gray-400">
+                    <ClipboardList className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">No assessment linked yet.</p>
+                    <p className="text-xs mt-1">Students will not see an exam for this course until you link one below.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Assign existing exam */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                <h3 className="font-bold text-gray-900 mb-1 flex items-center gap-2">
+                  <Link2 className="w-4 h-4 text-indigo-500" /> Assign Existing Assessment
+                </h3>
+                <p className="text-xs text-gray-400 mb-4">Pick an assessment from your organisation to link to this course. Students will see the exam at the bottom of their course page.</p>
+                <div className="space-y-2">
+                  {(allExams as any[])
+                    .filter((e: any) => !e.courseId || e.courseId === Number(id))
+                    .map((exam: any) => {
+                      const isLinked = linkedExam?.id === exam.id;
+                      return (
+                        <div key={exam.id}
+                          className={clsx('flex items-center justify-between gap-3 p-3.5 rounded-xl border transition-all',
+                            isLinked ? 'border-purple-300 bg-purple-50' : 'border-gray-100 hover:border-gray-200 bg-gray-50')}>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-sm text-gray-900 truncate">{exam.title}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">{exam.timeLimitMins}m · {exam.passMarkPercent}% pass · {exam.maxAttempts} attempt</p>
+                          </div>
+                          {isLinked ? (
+                            <span className="text-xs font-bold text-purple-600 bg-purple-100 px-2 py-1 rounded-full shrink-0">✓ Linked</span>
+                          ) : (
+                            <button onClick={() => attachExamMut.mutate(exam.id)} disabled={attachExamMut.isPending}
+                              className="btn-primary text-xs py-1.5 px-3 shrink-0">
+                              Link
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  {(allExams as any[]).length === 0 && (
+                    <p className="text-sm text-gray-400 text-center py-4">No assessments found. Create one in the Assessments section first.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* How it works */}
+              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 text-sm text-blue-800 space-y-1.5">
+                <p className="font-bold">📋 How this works for students:</p>
+                <p>• When a student opens this course, the linked exam appears at the bottom of the course page</p>
+                <p>• Clicking "Start Exam" opens fullscreen mode automatically</p>
+                <p>• If the student switches to another tab — <strong>warning shown</strong>, second violation = <strong>auto-submit</strong></p>
+                <p>• Score ≥ {linkedExam?.passMarkPercent ?? 80}% → <strong>Congratulations</strong> message; below → <strong>Not qualified</strong> message</p>
+              </div>
             </>
           )}
         </div>
@@ -517,10 +708,54 @@ const isInstructorRole = user?.role === 'Instructor';
                     {[courseForm.level, courseForm.language, courseForm.status].map(tag => (
                       <span key={tag} className="text-xs px-2.5 py-1 rounded-full font-semibold bg-gray-100 text-gray-600">{tag}</span>
                     ))}
+                    {courseForm.enforceSequentialLessons && (
+                      <span className="text-xs px-2.5 py-1 rounded-full font-semibold bg-purple-100 text-purple-600 flex items-center gap-1">
+                        <Lock className="w-3 h-3" /> Sequential
+                      </span>
+                    )}
                   </div>
                   <h2 className="text-2xl font-black text-gray-900 mb-2">{courseForm.title || '(No title yet)'}</h2>
                   <div className="text-sm text-gray-500 mb-3 rich-preview"
                     dangerouslySetInnerHTML={{ __html: courseForm.description || '<em>No description</em>' }} />
+
+                  {/* Category / instructor / tags summary */}
+                  <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-gray-500 mb-3">
+                    {courseForm.categoryId && (
+                      <span className="flex items-center gap-1">
+                        <BookOpen className="w-3.5 h-3.5 text-gray-400" />
+                        {(categories as any[]).find((c: any) => String(c.id) === courseForm.categoryId)?.name ?? 'Category'}
+                      </span>
+                    )}
+                    <span className="flex items-center gap-1">
+                      {isInstructorRole
+                        ? `${user?.firstName} ${user?.lastName}`
+                        : instructors.find((i: any) => String(i.id) === courseForm.instructorId)
+                          ? `${instructors.find((i: any) => String(i.id) === courseForm.instructorId)?.firstName} ${instructors.find((i: any) => String(i.id) === courseForm.instructorId)?.lastName}`
+                          : 'No instructor assigned'}
+                    </span>
+                  </div>
+                  {courseForm.tags && (
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {courseForm.tags.split(',').map(t => t.trim()).filter(Boolean).map(tag => (
+                        <span key={tag} className="text-xs px-2 py-0.5 rounded-md bg-gray-50 text-gray-400 border border-gray-100">#{tag}</span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Course-wide stats — computed from the actual module/lesson tree */}
+                  {modules.length > 0 && (() => {
+                    const totalLessons = modules.reduce((s: number, m: any) => s + countLessonsDeep(m.lessons ?? []), 0);
+                    const totalSecs = modules.reduce((s: number, m: any) =>
+                      s + sumDurationDeep(m.lessons ?? []), 0);
+                    return (
+                      <div className="flex flex-wrap gap-4 text-xs text-gray-500 mb-3 pb-3 border-b border-gray-100">
+                        <span className="flex items-center gap-1"><BookOpen className="w-3.5 h-3.5 text-gray-400" /> {modules.length} module{modules.length!==1?'s':''}</span>
+                        <span className="flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-gray-400" /> {totalLessons} lesson{totalLessons!==1?'s':''}</span>
+                        {totalSecs > 0 && <span className="flex items-center gap-1"><Eye className="w-3.5 h-3.5 text-gray-400" /> {fmtSecs(totalSecs)} total</span>}
+                      </div>
+                    );
+                  })()}
+
                   <p className="text-2xl font-black" style={{ color: 'var(--org-primary)' }}>
                     {courseForm.isFree ? '🆓 Free' : `₹${Number(courseForm.price || 0).toLocaleString('en-IN')}`}
                   </p>
@@ -529,24 +764,20 @@ const isInstructorRole = user?.role === 'Instructor';
 
               {modules.length > 0 && (
                 <div className="border-t border-gray-100 pt-5">
-                  <h3 className="font-bold text-gray-900 mb-3">Curriculum — {modules.length} module{modules.length!==1?'s':''}</h3>
+                  <h3 className="font-bold text-gray-900 mb-1">Curriculum</h3>
+                  <p className="text-xs text-gray-400 mb-4">
+                    {modules.length} module{modules.length!==1?'s':''} · {modules.reduce((s: number, m: any) => s + countLessonsDeep(m.lessons ?? []), 0)} lesson{modules.reduce((s: number, m: any) => s + countLessonsDeep(m.lessons ?? []), 0)!==1?'s':''}
+                  </p>
                   {modules.map((mod: any, i: number) => (
-                    <div key={mod.id} className="mb-4">
+                    <div key={mod.id} className="mb-5">
                       <div className="flex items-center gap-2 mb-2">
                         <span className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-600">{i+1}</span>
                         <p className="font-semibold text-gray-800">{mod.title}</p>
-                        <span className="text-xs text-gray-400">{(mod.lessons??[]).length} lessons</span>
+                        <span className="text-xs text-gray-400">{countLessonsDeep(mod.lessons ?? [])} lessons</span>
                       </div>
                       <div className="pl-8 space-y-1">
                         {(mod.lessons ?? []).map((l: any) => (
-                          <div key={l.id} className="flex items-center gap-2 text-sm text-gray-600 py-1 border-b border-gray-50">
-                            {l.type==='Video' ? <Video className="w-3.5 h-3.5 text-purple-400 flex-shrink-0"/> :
-                             l.type==='Audio' ? <Music className="w-3.5 h-3.5 text-amber-400 flex-shrink-0"/> :
-                             <FileText className="w-3.5 h-3.5 text-blue-400 flex-shrink-0"/>}
-                            <span className="flex-1">{l.title}</span>
-                            {l.durationSecs > 0 && <span className="text-xs text-gray-400">{fmtSecs(l.durationSecs)}</span>}
-                            {l.isPreview && <span className="text-xs text-green-600 font-semibold">Free</span>}
-                          </div>
+                          <PreviewLessonRow key={l.id} lesson={l} depth={0} />
                         ))}
                       </div>
                     </div>

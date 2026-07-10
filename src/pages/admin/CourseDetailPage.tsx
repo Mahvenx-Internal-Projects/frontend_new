@@ -2,11 +2,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronLeft, Star, Users, Clock, Globe, BookOpen, Play,
-  CheckCircle2, Lock, Award, ChevronDown, ChevronRight
+  CheckCircle2, Lock, Award, ChevronDown, ChevronRight,
+  AlertTriangle, Maximize2, ClipboardList, XCircle
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
-import { coursesApi, enrollmentsApi, examsApi } from '../../services/api';
+import { coursesApi, enrollmentsApi, examsApi, mockTestApi } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import type { Module, Lesson } from '../../types';
 import clsx from 'clsx';
@@ -21,6 +22,67 @@ export default function CourseDetailPage() {
   const { user } = useAuthStore();
   const qc = useQueryClient();
   const [expandedMods, setExpandedMods] = useState<Set<number>>(new Set([0]));
+
+  // Exam launch state
+  const [examLaunched, setExamLaunched] = useState(false);
+  const [tabWarning, setTabWarning] = useState(false);
+  const [violations, setViolations] = useState(0);
+  const violationsRef = useRef(0);
+  const examLaunchedRef = useRef(false);
+
+  // Fetch exam linked to this course via mockTestApi (more accurate than examsApi)
+  const { data: linkedExams = [] } = useQuery({
+    queryKey: ['course-linked-exam', numId],
+    queryFn: () => mockTestApi.getAll({ courseId: numId }).then((r: any) => r.data?.items ?? r.data ?? []),
+    enabled: !isNaN(numId) && numId > 0,
+  });
+  const linkedExam = (linkedExams as any[])[0] ?? null;
+
+  // Tab-switch detection — only active when exam is launched
+  useEffect(() => {
+    const handle = () => {
+      if (!examLaunchedRef.current) return;
+      if (document.hidden) {
+        const next = violationsRef.current + 1;
+        violationsRef.current = next;
+        setViolations(next);
+        if (next >= 2) {
+          toast.error('Second tab switch detected — exam auto-submitted!', { duration: 5000 });
+          setExamLaunched(false);
+          examLaunchedRef.current = false;
+          try { document.exitFullscreen?.(); } catch {}
+          // Navigate to exam page which will auto-submit on load
+          if (linkedExam) {
+            const route = linkedExam.questionTypes?.includes('Coding')
+              ? `/dashboard/coding-exam/${linkedExam.id}`
+              : `/dashboard/mock-test/${linkedExam.id}`;
+            navigate(route + '?autoSubmit=true');
+          }
+        } else {
+          setTabWarning(true);
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handle);
+    return () => document.removeEventListener('visibilitychange', handle);
+  }, [linkedExam, navigate]);
+
+  const launchExam = () => {
+    if (!linkedExam) return;
+    // Request fullscreen first
+    try { document.documentElement.requestFullscreen?.(); } catch {}
+    setExamLaunched(true);
+    examLaunchedRef.current = true;
+    violationsRef.current = 0;
+    setViolations(0);
+    setTabWarning(false);
+    // Navigate to exam
+    const hasCoding = linkedExam.hasCodingQuestions || linkedExam.questionTypes?.includes('Coding');
+    const route = hasCoding
+      ? `/dashboard/coding-exam/${linkedExam.id}`
+      : `/dashboard/mock-test/${linkedExam.id}`;
+    navigate(route);
+  };
 
   const { data: course, isLoading } = useQuery({
     queryKey: ['course-detail', rawId],
@@ -209,12 +271,72 @@ export default function CourseDetailPage() {
         </div>
       )}
 
-      {/* Exams */}
-      {(exams as any[]).length > 0 && enrollment && (
+      {/* ── Linked Assessment ─────────────────────────────── */}
+      {linkedExam && enrollment && (
         <div className="card p-5">
-          <h2 className="font-semibold text-gray-900 mb-3">Assessments</h2>
+          {/* Tab switch warning overlay */}
+          {tabWarning && (
+            <div className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center p-4">
+              <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
+                <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-3" />
+                <h2 className="text-xl font-black text-gray-900 mb-2">Tab Switch Detected!</h2>
+                <p className="text-gray-600 text-sm mb-2">You switched away from the exam page.</p>
+                <p className="text-red-600 font-bold text-sm mb-6">
+                  ⚠️ One more switch will <strong>auto-submit your exam!</strong>
+                </p>
+                <button className="btn-primary w-full justify-center py-3 font-black"
+                  onClick={() => {
+                    setTabWarning(false);
+                    try { document.documentElement.requestFullscreen?.(); } catch {}
+                    launchExam();
+                  }}>
+                  <Maximize2 className="w-4 h-4" /> Return to Exam (Fullscreen)
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 mb-4">
+            <ClipboardList className="w-5 h-5 text-purple-500" />
+            <h2 className="font-bold text-gray-900">Course Assessment</h2>
+          </div>
+
+          <div className="rounded-2xl border-2 border-purple-100 bg-purple-50 p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="font-bold text-gray-900 text-base">{linkedExam.title}</p>
+                <div className="flex flex-wrap gap-3 mt-2 text-xs text-gray-500">
+                  <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{linkedExam.timeLimitMins} min</span>
+                  <span>🎯 Pass: {linkedExam.passMarkPercent}%</span>
+                  <span>📝 {linkedExam.totalQuestions || 20} questions</span>
+                  <span>🔄 {linkedExam.maxAttempts} attempt{linkedExam.maxAttempts !== 1 ? 's' : ''}</span>
+                </div>
+              </div>
+              <Award className="w-8 h-8 text-amber-400 flex-shrink-0" />
+            </div>
+
+            <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700 space-y-1">
+              <p className="font-bold flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Exam Rules:</p>
+              <p>• Exam opens in <strong>fullscreen</strong> — do not exit</p>
+              <p>• Switching tabs = 1st warning shown, 2nd switch = <strong>auto-submit</strong></p>
+              <p>• Score ≥ {linkedExam.passMarkPercent}% to qualify for next round</p>
+            </div>
+
+            <button
+              onClick={launchExam}
+              className="mt-4 w-full btn-primary justify-center py-3 font-black text-base">
+              <Maximize2 className="w-5 h-5" /> Start Exam (Fullscreen)
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Legacy exams from examsApi (non-linked) */}
+      {(exams as any[]).filter((e: any) => e.id !== linkedExam?.id).length > 0 && enrollment && (
+        <div className="card p-5">
+          <h2 className="font-semibold text-gray-900 mb-3">Other Assessments</h2>
           <div className="space-y-2">
-            {(exams as any[]).map((exam: any) => (
+            {(exams as any[]).filter((e: any) => e.id !== linkedExam?.id).map((exam: any) => (
               <div key={exam.id}
                 className="flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-200 hover:bg-gray-50 transition-all">
                 <Award className="w-5 h-5 text-amber-500 flex-shrink-0" />
@@ -223,7 +345,7 @@ export default function CourseDetailPage() {
                   <p className="text-xs text-gray-400">{exam.timeLimitMins} min · Pass: {exam.passMarkPercent}%</p>
                 </div>
                 <button className="btn-primary text-xs"
-                  onClick={() => navigate(`/dashboard/exam/${exam.id}`)}>
+                  onClick={() => navigate(`/dashboard/mock-test/${exam.id}`)}>
                   Take Exam
                 </button>
               </div>

@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Trash2, Pencil, Save, ArrowLeft, CheckCircle2,
   Image, ChevronDown, ChevronUp, Calculator, AlignLeft,
-  CircleDot, CheckSquare, List, ToggleLeft, Eye, EyeOff
+  CircleDot, CheckSquare, List, ToggleLeft, Eye, EyeOff, Upload, Download
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { mockTestApi } from '../../services/api';
@@ -289,6 +289,8 @@ export default function MockTestEditorPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<any>(null);
   const [expandedQ, setExpandedQ] = useState<number | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const bulkInputRef = useRef<HTMLInputElement>(null);
 
   const { data: test, isLoading } = useQuery({
     queryKey: ['mocktest-edit', testId],
@@ -306,6 +308,31 @@ export default function MockTestEditorPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['mocktest-edit'] }); toast.success('Published!'); },
   });
 
+  const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const token = localStorage.getItem('lms_token');
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch(`/api/mocktests/${testId}/questions/bulk-upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message ?? 'Upload failed');
+      toast.success(`Imported ${data.imported} questions successfully!`);
+      qc.invalidateQueries({ queryKey: ['mocktest-edit'] });
+    } catch (err: any) {
+      toast.error(err.message ?? 'Upload failed');
+    } finally {
+      setUploading(false);
+      if (bulkInputRef.current) bulkInputRef.current.value = '';
+    }
+  };
+
   const questions: any[] = test?.questions ?? [];
 
   return (
@@ -318,7 +345,15 @@ export default function MockTestEditorPage() {
             <p className="text-xs text-gray-400">{questions.length} questions · {test?.timeLimitMins} mins · Pass {test?.passMarkPercent}%</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          {/* Hidden file input for bulk upload */}
+          <input ref={bulkInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleBulkUpload} />
+          <button className="btn-secondary text-sm" onClick={() => bulkInputRef.current?.click()} disabled={uploading}>
+            <Upload className="w-4 h-4" /> {uploading ? 'Uploading…' : 'Bulk Upload (.xlsx)'}
+          </button>
+          <a href="/assessment_questions_template.xlsx" download className="btn-secondary text-sm flex items-center gap-1.5">
+            <Download className="w-4 h-4" /> Download Template
+          </a>
           {test?.status !== 'Published' && (
             <button className="btn-primary" onClick={() => publishMut.mutate()} disabled={questions.length === 0}>
               <Eye className="w-4 h-4" /> Publish Test
@@ -442,7 +477,7 @@ export default function MockTestEditorPage() {
         <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-gray-200">
           <div className="text-5xl mb-3">📝</div>
           <p className="font-bold text-gray-500">No questions yet</p>
-          <p className="text-sm text-gray-400 mt-1">Add questions to build your mock test</p>
+          <p className="text-sm text-gray-400 mt-1">Add questions to build your assessment</p>
         </div>
       )}
     </div>

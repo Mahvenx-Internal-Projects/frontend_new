@@ -6,7 +6,7 @@ const isLocal = typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 const API_BASE = isLocal
   ? '/api'
-  : (import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'https://api.worksupport360.com/api');
+  : (import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'https://localhost:55296//api');
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -263,4 +263,21 @@ export const batchApi = {
   addStudent:      (batchId: number, d: object)  => api.post(`/batches/${batchId}/students`, d),
   removeStudent:   (batchId: number, sid: number)=> api.delete(`/batches/${batchId}/students/${sid}`),
   updatePayment:   (batchId: number, sid: number, d: object) => api.put(`/batches/${batchId}/students/${sid}/payment`, d),
+};
+export const notificationsApi = {
+  getMine:     (unreadOnly = false) => api.get('/notifications', { params: { unreadOnly } }),
+  markRead:    (id: number)         => api.post(`/notifications/${id}/read`),
+  markAllRead: ()                   => api.post('/notifications/read-all'),
+  delete:      (id: number)         => api.delete(`/notifications/${id}`),
+};
+
+export const judgeApi = {
+  run: (code: string, language: string, input: string) =>
+    api.post('/judge/run', { code, language, input }),
+  submit: (codingQuestionId: number, code: string, language: string) =>
+    api.post(`/judge/submit/${codingQuestionId}`, { code, language }),
+  createCodingQuestion: (data: any) =>
+    api.post('/coding-questions', data),
+  getCodingQuestion: (id: number) =>
+    api.get(`/coding-questions/${id}`),
 };

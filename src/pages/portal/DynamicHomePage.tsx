@@ -423,6 +423,12 @@ export default function DynamicHomePage() {
     enabled: !!org?.id,
   });
 
+  const { data: reviews = [] } = useQuery({
+    queryKey: ['portal-reviews', org?.id],
+    queryFn: () => portalApi.getReviews(org!.id).then(r => r.data),
+    enabled: !!org?.id,
+  });
+
   // Inject custom HTML into page (runs after mount)
   useEffect(() => {
     if ((config as any)?.customHtml) {
@@ -464,6 +470,7 @@ export default function DynamicHomePage() {
     categories: categories as PublicCategory[],
     courses: ((coursesData as any)?.items ?? []) as PublicCourse[],
     instructors: instructors as any[],
+    reviews: reviews as any[],
     onCourseClick: (id) => navigate(`/course/${id}`),
     onNavigate: navigate,
     isAuthenticated,

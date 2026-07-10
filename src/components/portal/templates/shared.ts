@@ -10,6 +10,7 @@ export interface TemplateProps {
   categories: PublicCategory[];
   courses: PublicCourse[];
   instructors: any[];
+  reviews?: any[];
   onCourseClick: (id: number) => void;
   onNavigate: (path: string) => void;
   isAuthenticated: boolean;

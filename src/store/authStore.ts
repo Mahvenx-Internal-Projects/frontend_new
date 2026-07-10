@@ -2,6 +2,20 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User } from '../types';
 
+// Parse a JWT without verifying signature (safe client-side use only —
+// we trust the token since it came from our own backend's login endpoint)
+function parseJwtRoles(token: string): string[] {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    // The backend adds a "roles" claim for each UserRoleAssignment row.
+    // It may come as a single string or an array of strings depending on
+    // how many roles are assigned.
+    const raw = payload['roles'];
+    if (!raw) return [];
+    return Array.isArray(raw) ? raw : [raw];
+  } catch { return []; }
+}
+
 interface AuthState {
   user: User | null;
   token: string | null;
@@ -21,7 +35,12 @@ export const useAuthStore = create<AuthState>()(
       _hydrated: false,
       setAuth: (user, token) => {
         localStorage.setItem('lms_token', token);
-        set({ user, token, isAuthenticated: true });
+        // Attach the full roles list from the JWT so the role switcher
+        // can show every role the admin assigned to this user, not just
+        // the single primary role stored in the User DTO.
+        const roles = parseJwtRoles(token);
+        const userWithRoles = { ...user, roles: roles.length ? roles : [user.role] };
+        set({ user: userWithRoles, token, isAuthenticated: true });
       },
       logout: () => {
         localStorage.removeItem('lms_token');
@@ -31,7 +50,6 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'lms_auth',
-      // Persist auth state so refresh restores isAuthenticated
       partialize: (s) => ({ user: s.user, token: s.token, isAuthenticated: s.isAuthenticated }),
       onRehydrateStorage: () => (state) => {
         if (state) state.setHydrated();

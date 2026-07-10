@@ -44,6 +44,7 @@ import LessonPlayerPage     from './pages/student/LessonPlayerPage';
 // Mock tests
 import MockTestsListPage    from './pages/student/mock/MockTestsListPage';
 import MockTestPage         from './pages/student/mock/MockTestPage';
+import CodingExamPage      from './pages/student/mock/CodingExamPage';
 import MockTestAnalysisPage from './pages/student/mock/MockTestAnalysisPage';
 
 // Portal
@@ -124,7 +125,8 @@ export default function App() {
               {/* Mock tests - shared admin/instructor/student */}
               <Route path="mock-tests"               element={<MockTestsListPage />} />
               <Route path="mock-test-editor/:testId" element={<MockTestEditorPage />} />
-              <Route path="mock-test/:testId"        element={<MockTestPage />} />
+              <Route path="mock-test/:testId"        element={<CodingExamPage />} />
+              <Route path="coding-exam/:testId"      element={<CodingExamPage />} />
               <Route path="mock-analysis/:studentId" element={<MockTestAnalysisPage />} />
 
               {/* Trainer / Instructor */}

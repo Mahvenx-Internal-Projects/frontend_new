@@ -27,8 +27,8 @@ export default function MockTestsListPage() {
   const [form, setForm] = useState({
     title: '', description: '', topic: 'General',
     difficulty: 'Mixed', timeLimitMins: '30',
-    totalQuestions: '10', passMarkPercent: '60',
-    randomizeQuestions: true, maxAttempts: '3',
+    totalQuestions: '0', passMarkPercent: '60',
+    randomizeQuestions: true, maxAttempts: '1',
   });
 
   const { data: tests = [], isLoading } = useQuery({
@@ -76,7 +76,7 @@ export default function MockTestsListPage() {
         <div>
           <h1 className="page-title flex items-center gap-2">
             <Target className="w-6 h-6" style={{color:'var(--org-primary)'}}/>
-            {isAdmin ? 'Mock Tests Management' : 'Mock Tests'}
+            {isAdmin ? 'Assessments Management' : 'Assessments'}
           </h1>
           <p className="page-sub">
             {isAdmin ? 'Create and manage assessment tests' : 'Practice tests with instant evaluation'}
@@ -93,7 +93,7 @@ export default function MockTestsListPage() {
       {showCreate && (
         <div className="bg-white rounded-2xl border-2 border-[var(--org-primary)]/30 shadow-sm p-6 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="font-bold text-gray-900">New Mock Test</h3>
+            <h3 className="font-bold text-gray-900">New Assessment</h3>
             <button onClick={() => setShowCreate(false)} className="p-2 rounded-xl hover:bg-gray-100"><X className="w-4 h-4"/></button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -162,7 +162,7 @@ export default function MockTestsListPage() {
       ) : testList.length === 0 ? (
         <div className="bg-white rounded-2xl border-2 border-dashed border-gray-200 p-16 text-center">
           <Target className="w-14 h-14 mx-auto mb-4 text-gray-200"/>
-          <p className="font-bold text-gray-500 text-lg">No mock tests yet</p>
+          <p className="font-bold text-gray-500 text-lg">No assessments yet</p>
           {isAdmin && (
             <button className="btn-primary mt-4" onClick={() => setShowCreate(true)}>
               <Plus className="w-4 h-4"/> Create First Mock Test
@@ -237,7 +237,7 @@ export default function MockTestsListPage() {
                     <div className="flex gap-2">
                       <button
                         className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 transition-all"
-                        onClick={() => navigate(`/dashboard/mock-test/${t.id}`)}>
+                        onClick={() => navigate(`/dashboard/${t.questionTypes?.includes('Coding') ? 'coding-exam' : 'mock-test'}/${t.id}`)}>
                         <Eye className="w-3.5 h-3.5"/> Preview
                       </button>
                       <button
@@ -251,7 +251,7 @@ export default function MockTestsListPage() {
                   <button
                     className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white hover:opacity-90 transition-all"
                     style={{background:'linear-gradient(135deg,var(--org-primary),var(--org-secondary,var(--org-primary)))'}}
-                    onClick={() => navigate(`/dashboard/mock-test/${t.id}`)}>
+                    onClick={() => navigate(`/dashboard/${t.questionTypes?.includes('Coding') ? 'coding-exam' : 'mock-test'}/${t.id}`)}>
                     <Play className="w-4 h-4"/> Start Test
                   </button>
                 )}
