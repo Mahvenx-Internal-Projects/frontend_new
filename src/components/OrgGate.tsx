@@ -83,7 +83,7 @@ function BootLoader() {
             style={{ animationDelay: `${i * 0.15}s` }} />
         ))}
       </div>
-      <p className="text-sm text-gray-400 tracking-wide">Loading your learning portal…</p>
+      <p className="text-sm text-gray-400 tracking-wide">Loading…</p>
     </div>
   );
 }

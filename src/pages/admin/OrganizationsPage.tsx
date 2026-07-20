@@ -9,7 +9,7 @@ import Modal from '../../components/shared/Modal';
 
 const API_BASE = typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-  ? '' : 'https://api.worksupport360.com';
+  ? '' : 'https://lms.worksupport360.com';
 
 function LogoUpload({ value, onChange }: { value: string; onChange: (url: string) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);

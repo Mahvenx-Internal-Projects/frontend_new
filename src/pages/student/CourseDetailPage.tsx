@@ -1,250 +1,318 @@
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  ChevronLeft, Star, Users, Clock, Globe, BookOpen, Play,
-  CheckCircle2, Lock, Award, ChevronDown, ChevronRight
+  ChevronLeft, ChevronDown, ChevronRight, Play, Lock,
+  Star, Users, Globe, BookOpen, Award,
+  CheckCircle2, AlertTriangle, Maximize2, ClipboardList, Clock
 } from 'lucide-react';
-import { useState } from 'react';
 import toast from 'react-hot-toast';
-import { coursesApi, enrollmentsApi, examsApi, lessonsApi } from '../../services/api';
+import { coursesApi, enrollmentsApi, mockTestApi } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
-import type { Module, Lesson } from '../../types';
 import clsx from 'clsx';
 
+// ─── THIS IS THE STUDENT COURSE DETAIL PAGE ───────────────────
+// Route: /dashboard/catalog/:courseId
+// Shows: course info, modules/lessons list, linked exam
+// Does NOT contain any lesson editor, block editor, or admin UI
+// ─────────────────────────────────────────────────────────────
+
 export default function CourseDetailPage() {
-  const { courseId } = useParams();
+  const { courseId } = useParams<{ courseId: string }>();
+  const numId = parseInt(courseId ?? '0', 10);
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const qc = useQueryClient();
-  const [expandedMods, setExpandedMods] = useState<Set<number>>(new Set([0]));
-  const numericCourseId = Number(courseId);
-  const hasValidCourseId = !Number.isNaN(numericCourseId) && numericCourseId > 0;
 
+  const [expandedMods, setExpandedMods] = useState<Set<number>>(new Set());
+  const [tabWarning, setTabWarning] = useState(false);
+  const violationsRef = useRef(0);
+  const examActiveRef = useRef(false);
+
+  // ── Fetch course ──────────────────────────────────────────
   const { data: course, isLoading } = useQuery({
-    queryKey: ['course-detail', numericCourseId],
-    queryFn: () => coursesApi.get(numericCourseId).then(r => r.data),
-    enabled: hasValidCourseId,
+    queryKey: ['student-course', numId],
+    queryFn: () => coursesApi.get(numId).then(r => r.data),
+    enabled: numId > 0,
   });
 
-  const { data: exams = [] } = useQuery({
-    queryKey: ['course-exams', numericCourseId],
-    queryFn: () => examsApi.getByCourse(numericCourseId).then(r => r.data),
-    enabled: hasValidCourseId,
+  // ── Fetch modules + lessons separately ───────────────────
+  const { data: modules = [] } = useQuery({
+    queryKey: ['student-course-modules', numId],
+    queryFn: () => coursesApi.getModules(numId).then((r: any) => r.data ?? []),
+    enabled: numId > 0,
   });
 
+  // ── Fetch enrollment ──────────────────────────────────────
   const { data: myEnrollments = [] } = useQuery({
     queryKey: ['my-enrollments', user?.id],
     queryFn: () => enrollmentsApi.getByUser(user!.id).then(r => r.data),
     enabled: !!user?.id,
   });
 
-  const enrollment = (myEnrollments as any[]).find((e: any) => e.courseId === numericCourseId);
-
-  // Per-lesson progress — drives the green tick / pending state on each
-  // lesson row in the curriculum list below.
-  const { data: lessonProgress = [] } = useQuery({
-    queryKey: ['course-lesson-progress', numericCourseId],
-    queryFn: () => lessonsApi.getCourseProgress(numericCourseId).then(r => r.data),
-    enabled: hasValidCourseId && !!enrollment,
+  // ── Fetch linked exam ─────────────────────────────────────
+  const { data: linkedExams = [] } = useQuery({
+    queryKey: ['student-course-exam', numId],
+    queryFn: () => mockTestApi.getAll({ courseId: numId }).then((r: any) => r.data?.items ?? r.data ?? []),
+    enabled: numId > 0,
   });
-  const progressByLessonId: Record<number, any> = {};
-  (lessonProgress as any[]).forEach((p: any) => { progressByLessonId[p.lessonId] = p; });
 
+  const enrollment = (myEnrollments as any[]).find((e: any) => e.courseId === numId);
+  const linkedExam = (linkedExams as any[])[0] ?? null;
+  const allLessons = (modules as any[]).flatMap((m: any) => m.lessons ?? []);
+  const firstLesson = allLessons[0];
+
+  // Auto-expand all modules
+  useEffect(() => {
+    if ((modules as any[]).length > 0)
+      setExpandedMods(new Set((modules as any[]).map((_: any, i: number) => i)));
+  }, [(modules as any[]).length]);
+
+  // ── Enroll ────────────────────────────────────────────────
   const enrollMut = useMutation({
-    mutationFn: () => enrollmentsApi.enroll({ userId: user!.id, courseId: numericCourseId }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['my-enrollments'] });
-      toast.success('Enrolled! Start learning now.');
-    },
-    onError: (e: any) => toast.error(e.response?.data?.message ?? 'Enrollment failed'),
+    mutationFn: () => enrollmentsApi.enroll({ userId: user!.id, courseId: numId }),
+    onSuccess: () => { toast.success('Enrolled!'); qc.invalidateQueries({ queryKey: ['my-enrollments'] }); },
+    onError: () => toast.error('Enrolment failed'),
   });
 
+  // ── Tab-switch protection for exam ────────────────────────
+  useEffect(() => {
+    const handle = () => {
+      if (!examActiveRef.current || !document.hidden) return;
+      const next = ++violationsRef.current;
+      if (next >= 2) {
+        toast.error('Second tab switch — exam auto-submitted!', { duration: 5000 });
+        examActiveRef.current = false;
+        try { document.exitFullscreen?.(); } catch {}
+        if (linkedExam) navigate(`/dashboard/mock-test/${linkedExam.id}?autoSubmit=true`);
+      } else {
+        setTabWarning(true);
+      }
+    };
+    document.addEventListener('visibilitychange', handle);
+    return () => document.removeEventListener('visibilitychange', handle);
+  }, [linkedExam, navigate]);
+
+  const launchExam = () => {
+    if (!linkedExam) return;
+    try { document.documentElement.requestFullscreen?.(); } catch {}
+    examActiveRef.current = true;
+    violationsRef.current = 0;
+    setTabWarning(false);
+    navigate(`/dashboard/mock-test/${linkedExam.id}`);
+  };
+
+  function fmtDuration(s: number) {
+    if (!s) return '';
+    if (s >= 3600) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+    return `${Math.floor(s / 60)} min`;
+  }
+
+  // ── Loading ───────────────────────────────────────────────
   if (isLoading) return (
-    <div className="space-y-4 animate-pulse">
-      <div className="h-8 bg-gray-100 rounded w-1/3" />
-      <div className="h-64 bg-gray-100 rounded-xl" />
+    <div className="flex items-center justify-center py-20">
+      <div className="w-8 h-8 border-4 border-[var(--org-primary)] border-t-transparent rounded-full animate-spin" />
     </div>
   );
 
-  if (!course) return <div className="text-center py-20 text-gray-400">Course not found.</div>;
-
-  const totalLessons = (course.modules ?? []).reduce((s: number, m: Module) => s + (m.lessons?.length ?? 0), 0);
-  const completedLessonsCount = (lessonProgress as any[]).filter((p: any) => p.isCompleted).length;
-  const pendingLessonsCount = Math.max(0, totalLessons - completedLessonsCount);
-  const previewLessons = (course.modules ?? []).flatMap((m: Module) => m.lessons ?? []).filter((l: Lesson) => l.isPreview);
-  const firstLesson = (course.modules ?? [])[0]?.lessons?.[0];
+  if (!course) return (
+    <div className="text-center py-20 text-gray-400">
+      <p className="text-lg font-bold mb-2">Course not found</p>
+      <button className="btn-primary" onClick={() => navigate('/dashboard/catalog')}>Back to Catalog</button>
+    </div>
+  );
 
   return (
     <div className="max-w-4xl space-y-5">
+
+      {/* Tab-switch warning overlay */}
+      {tabWarning && (
+        <div className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
+            <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-3" />
+            <h2 className="text-xl font-black mb-2">Tab Switch Detected!</h2>
+            <p className="text-red-600 font-bold text-sm mb-6">⚠️ One more switch will auto-submit your exam!</p>
+            <button className="btn-primary w-full justify-center py-3 font-black"
+              onClick={() => { setTabWarning(false); try { document.documentElement.requestFullscreen?.(); } catch {} launchExam(); }}>
+              <Maximize2 className="w-4 h-4" /> Return to Exam
+            </button>
+          </div>
+        </div>
+      )}
+
       <button className="btn-ghost" onClick={() => navigate('/dashboard/catalog')}>
         <ChevronLeft className="w-4 h-4" /> Back to Catalog
       </button>
 
-      {/* Hero */}
-      <div className="card overflow-hidden">
-        <div className="h-48 bg-gradient-to-br from-brand-600 to-purple-700 relative">
-          {course.thumbnailUrl && <img src={course.thumbnailUrl} className="w-full h-full object-cover opacity-60" alt="" />}
+      {/* ── Hero ──────────────────────────────────────────── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="h-48 relative bg-gradient-to-br from-indigo-600 to-purple-700">
+          {course.thumbnailUrl && (
+            <img src={course.thumbnailUrl} className="w-full h-full object-cover opacity-60" alt="" />
+          )}
           <div className="absolute inset-0 p-6 flex flex-col justify-end bg-gradient-to-t from-black/60">
-            <div className="flex gap-2 mb-2">
-              <span className="badge-blue">{course.level}</span>
-              <span className="badge bg-white/20 text-white">{course.categoryName}</span>
+            <div className="flex gap-2 mb-2 flex-wrap">
+              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-white/20 text-white">{course.level}</span>
+              {linkedExam && (
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-purple-500/80 text-white flex items-center gap-1">
+                  <ClipboardList className="w-3 h-3" /> Has Assessment
+                </span>
+              )}
             </div>
-            <h1 className="text-2xl font-bold text-white leading-tight">{course.title}</h1>
+            <h1 className="text-2xl font-black text-white leading-tight">{course.title}</h1>
           </div>
         </div>
 
         <div className="p-6">
-          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 mb-4">
-            <span className="flex items-center gap-1"><Star className="w-4 h-4 text-amber-400 fill-amber-400" />{course.averageRating.toFixed(1)} ({course.ratingCount} ratings)</span>
-            <span className="flex items-center gap-1"><Users className="w-4 h-4" />{course.enrollmentCount} students</span>
-            <span className="flex items-center gap-1"><Clock className="w-4 h-4" />{course.durationMinutes} minutes</span>
+          <div className="flex flex-wrap gap-4 text-sm text-gray-500 mb-4">
+            <span className="flex items-center gap-1"><Star className="w-4 h-4 text-amber-400 fill-amber-400" />{(course.averageRating ?? 0).toFixed(1)}</span>
+            <span className="flex items-center gap-1"><Users className="w-4 h-4" />{course.enrollmentCount ?? 0} students</span>
             <span className="flex items-center gap-1"><Globe className="w-4 h-4" />{course.language}</span>
-            <span className="flex items-center gap-1"><BookOpen className="w-4 h-4" />{totalLessons} lessons</span>
+            <span className="flex items-center gap-1"><BookOpen className="w-4 h-4" />{allLessons.length} lessons</span>
           </div>
 
-          <div className="text-gray-600 text-sm leading-relaxed mb-4 prose prose-sm" dangerouslySetInnerHTML={{ __html: course.description ?? '' }} />
+          {course.description && (
+            <div className="text-gray-600 text-sm leading-relaxed mb-5 prose prose-sm max-w-none"
+              dangerouslySetInnerHTML={{ __html: course.description }} />
+          )}
 
           <div className="flex items-center justify-between flex-wrap gap-4">
-            <div>
-              <p className="text-xs text-gray-400">Instructor</p>
-              <p className="font-semibold text-gray-800">{course.instructorName}</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="text-right">
-                <p className="text-2xl font-bold text-gray-900">
-                  {course.isFree ? <span className="text-green-600">Free</span> : `$${course.price}`}
-                </p>
-              </div>
-              {enrollment ? (
-                <button className="btn-primary"
-                  onClick={() => firstLesson && navigate(`/learn/${course.id}/lesson/${firstLesson.id}`)}>
-                  <Play className="w-4 h-4" /> Continue Learning
-                </button>
-              ) : (
-                <button className="btn-primary" onClick={() => enrollMut.mutate()} disabled={enrollMut.isPending}>
-                  {enrollMut.isPending ? 'Enrolling…' : 'Enroll Now'}
-                </button>
-              )}
-            </div>
+            <p className="text-2xl font-black text-gray-900">
+              {course.isFree ? <span className="text-green-600">Free</span> : `₹${course.price}`}
+            </p>
+            {enrollment ? (
+              <button className="btn-primary px-6 py-2.5 font-bold"
+                onClick={() => firstLesson && navigate(`/learn/${course.id}/lesson/${firstLesson.id}`)}>
+                <Play className="w-4 h-4" /> {enrollment.progressPercent > 0 ? 'Continue Learning' : 'Start Learning'}
+              </button>
+            ) : (
+              <button className="btn-primary px-6 py-2.5 font-bold"
+                onClick={() => enrollMut.mutate()} disabled={enrollMut.isPending}>
+                {enrollMut.isPending ? 'Enrolling…' : course.isFree ? '🎓 Enroll Free' : 'Enroll Now'}
+              </button>
+            )}
           </div>
 
           {enrollment && (
             <div className="mt-4">
               <div className="flex justify-between text-xs text-gray-500 mb-1">
-                <span>Progress</span><span>{enrollment.progressPercent}%</span>
+                <span>Progress</span>
+                <span className="font-bold" style={{ color: 'var(--org-primary)' }}>{enrollment.progressPercent ?? 0}%</span>
               </div>
-              <div className="progress-bar">
-                <div className="progress-bar-fill" style={{ width: `${enrollment.progressPercent}%` }} />
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div className="h-full rounded-full" style={{ width: `${enrollment.progressPercent ?? 0}%`, background: 'var(--org-primary)' }} />
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* Curriculum */}
-      <div className="card p-5">
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-          <h2 className="font-semibold text-gray-900">Course Curriculum</h2>
-          {enrollment && (
-            <div className="flex items-center gap-3 text-xs">
-              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-50 text-green-700 font-semibold">
-                <CheckCircle2 className="w-3.5 h-3.5"/> {completedLessonsCount} completed
-              </span>
-              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 font-semibold">
-                {pendingLessonsCount} pending
-              </span>
-            </div>
-          )}
+      {/* ── Curriculum ────────────────────────────────────── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="font-bold text-gray-900 flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-indigo-500" /> Course Curriculum
+          </h2>
+          <span className="text-xs text-gray-400">{allLessons.length} lessons</span>
         </div>
-        <div className="space-y-2">
-          {(() => {
-            // Flat, in-order lesson list across all modules — needed to
-            // determine sequential lock state consistently with the
-            // lesson player page's logic.
-            const flatLessons: Lesson[] = (course.modules ?? []).flatMap((m: Module) => m.lessons ?? []);
-            const isLessonLocked = (lessonId: number): boolean => {
-              if (!course.enforceSequentialLessons) return false;
-              const idx = flatLessons.findIndex(l => l.id === lessonId);
-              for (let i = 0; i < idx; i++) {
-                if (!progressByLessonId[flatLessons[i].id]?.isCompleted) return true;
-              }
-              return false;
-            };
 
-            return (course.modules ?? []).map((mod: Module, mi: number) => (
-            <div key={mod.id} className="border border-gray-200 rounded-xl overflow-hidden">
-              <button
-                className="w-full flex items-center gap-3 px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
-                onClick={() => setExpandedMods(s => { const n = new Set(s); n.has(mi) ? n.delete(mi) : n.add(mi); return n; })}>
-                {expandedMods.has(mi) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
-                <span className="flex-1 font-medium text-sm text-gray-800">{mod.title}</span>
-                <span className="text-xs text-gray-400">{mod.lessons?.length ?? 0} lessons</span>
-              </button>
-              {expandedMods.has(mi) && (
-                <div className="divide-y divide-gray-100">
-                  {(mod.lessons ?? []).map((lesson: Lesson) => {
-                    const sequentiallyLocked = isLessonLocked(lesson.id);
-                    const canPlay = (lesson.isPreview || !!enrollment) && !sequentiallyLocked;
-                    const prog = progressByLessonId[lesson.id];
-                    const isDone = prog?.isCompleted ?? false;
-                    const isStarted = !isDone && (prog?.watchedSeconds ?? 0) > 0;
-                    return (
-                      <div key={lesson.id}
-                        className={clsx('flex items-center gap-3 px-4 py-2.5', canPlay ? 'cursor-pointer hover:bg-gray-50' : 'opacity-60',
-                          isDone && 'bg-green-50/40')}
-                        title={sequentiallyLocked ? 'Complete earlier lessons to unlock' : ''}
-                        onClick={() => canPlay && enrollment && navigate(`/learn/${course.id}/lesson/${lesson.id}`)}>
-                        {/* Completion indicator: green tick / in-progress dot / lock / play */}
-                        {isDone ? (
-                          <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
-                        ) : !canPlay ? (
-                          <Lock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                        ) : isStarted ? (
-                          <div className="w-3.5 h-3.5 rounded-full border-2 border-[var(--org-primary)] flex items-center justify-center flex-shrink-0">
-                            <div className="w-1.5 h-1.5 rounded-full bg-[var(--org-primary)]" />
-                          </div>
-                        ) : (
-                          <Play className="w-3.5 h-3.5 text-brand-500 flex-shrink-0" />
-                        )}
-                        <span className={clsx('flex-1 text-sm', isDone ? 'text-gray-500 line-through' : 'text-gray-700')}>
-                          {lesson.title}
-                        </span>
-                        {lesson.isPreview && <span className="badge-blue text-xs">Preview</span>}
-                        {isStarted && prog?.watchedSeconds > 0 && (
-                          <span className="text-xs text-[var(--org-primary)] font-semibold">
-                            {Math.min(100, Math.round(prog.watchedSeconds / Math.max(1, lesson.durationSecs) * 100))}%
-                          </span>
-                        )}
-                        <span className="text-xs text-gray-400">{Math.round(lesson.durationSecs / 60)} min</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+        {(modules as any[]).length === 0 ? (
+          <div className="flex flex-col items-center py-16 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center mb-4">
+              <Play className="w-7 h-7 text-gray-200" />
             </div>
-          ));
-          })()}
-        </div>
-      </div>
-
-      {/* Exams */}
-      {(exams as any[]).length > 0 && enrollment && (
-        <div className="card p-5">
-          <h2 className="font-semibold text-gray-900 mb-3">Assessments</h2>
-          <div className="space-y-2">
-            {(exams as any[]).map((exam: any) => (
-              <div key={exam.id} className="flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-200 hover:border-brand-200 hover:bg-brand-50/30 transition-all">
-                <Award className="w-5 h-5 text-amber-500 flex-shrink-0" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-800">{exam.title}</p>
-                  <p className="text-xs text-gray-400">{exam.timeLimitMins} min · Pass: {exam.passMarkPercent}%</p>
-                </div>
-                <button className="btn-primary text-xs" onClick={() => navigate(`/dashboard/exam/${exam.id}`)}>
-                  Take Exam
+            <p className="font-bold text-gray-400">No lessons yet</p>
+            <p className="text-sm text-gray-400 mt-1">Content will appear here once the instructor adds lessons.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {(modules as any[]).map((mod: any, mi: number) => (
+              <div key={mod.id}>
+                <button
+                  className="w-full flex items-center gap-3 px-5 py-3.5 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+                  onClick={() => setExpandedMods(s => { const n = new Set(s); n.has(mi) ? n.delete(mi) : n.add(mi); return n; })}>
+                  {expandedMods.has(mi) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                  <span className="flex-1 font-semibold text-sm text-gray-800">{mod.title}</span>
+                  <span className="text-xs text-gray-400">{(mod.lessons ?? []).length} lessons</span>
                 </button>
+
+                {expandedMods.has(mi) && (
+                  <div className="divide-y divide-gray-50">
+                    {(mod.lessons ?? []).map((lesson: any) => {
+                      const canPlay = lesson.isPreview || !!enrollment;
+                      return (
+                        <div key={lesson.id}
+                          className={clsx('flex items-center gap-3 px-5 py-3 transition-colors',
+                            canPlay ? 'cursor-pointer hover:bg-indigo-50' : 'opacity-50 cursor-not-allowed')}
+                          onClick={() => {
+                            if (!canPlay) { toast('Enroll to access this lesson'); return; }
+                            navigate(`/learn/${course.id}/lesson/${lesson.id}`);
+                          }}>
+                          <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
+                            {lesson.progress?.isCompleted
+                              ? <CheckCircle2 className="w-4 h-4 text-green-500" />
+                              : canPlay
+                                ? <Play className="w-3.5 h-3.5 text-indigo-500" />
+                                : <Lock className="w-3.5 h-3.5 text-gray-400" />}
+                          </div>
+                          <span className="flex-1 text-sm text-gray-700">{lesson.title}</span>
+                          {lesson.isPreview && !enrollment && (
+                            <span className="text-xs bg-blue-100 text-blue-600 font-semibold px-2 py-0.5 rounded-full">Preview</span>
+                          )}
+                          {(lesson.durationSecs ?? 0) > 0 && (
+                            <span className="text-xs text-gray-400">{fmtDuration(lesson.durationSecs)}</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* ── Exam (enrolled students only) ─────────────────── */}
+      {linkedExam && enrollment && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <h2 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <Award className="w-4 h-4 text-amber-500" /> Course Assessment
+          </h2>
+          <div className="rounded-2xl border-2 border-purple-100 bg-gradient-to-br from-purple-50 to-indigo-50 p-5">
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div>
+                <p className="font-bold text-gray-900">{linkedExam.title}</p>
+                <div className="flex flex-wrap gap-3 mt-1.5 text-xs text-gray-500">
+                  <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{linkedExam.timeLimitMins} min</span>
+                  <span>📝 {linkedExam.totalQuestions || 20} questions</span>
+                  <span>🔄 {linkedExam.maxAttempts} attempt{linkedExam.maxAttempts !== 1 ? 's' : ''}</span>
+                </div>
+              </div>
+              <ClipboardList className="w-7 h-7 text-purple-400 flex-shrink-0" />
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700 space-y-1 mb-4">
+              <p className="font-bold">⚠️ Exam Rules</p>
+              <p>• Opens in fullscreen — do not exit</p>
+              <p>• 1st tab switch = warning &nbsp;|&nbsp; 2nd tab switch = auto-submit</p>
+              <p>• Results will be shared by the organization after evaluation</p>
+            </div>
+            <button onClick={launchExam} className="w-full btn-primary justify-center py-3 text-base font-black">
+              <Maximize2 className="w-5 h-5" /> Start Exam (Fullscreen)
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Prompt to enroll if exam exists but not enrolled */}
+      {linkedExam && !enrollment && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 text-center">
+          <ClipboardList className="w-8 h-8 text-purple-300 mx-auto mb-2" />
+          <p className="font-bold text-gray-700">This course has an assessment</p>
+          <p className="text-sm text-gray-400 mt-1 mb-4">Enroll to unlock the exam.</p>
+          <button className="btn-primary" onClick={() => enrollMut.mutate()} disabled={enrollMut.isPending}>
+            {enrollMut.isPending ? 'Enrolling…' : 'Enroll to Take Exam'}
+          </button>
         </div>
       )}
     </div>

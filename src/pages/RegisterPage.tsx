@@ -12,7 +12,7 @@ export default function RegisterPage() {
   const { org } = useOrgStore();
   const [showPw, setShowPw] = useState(false);
   const [form, setForm] = useState({
-    firstName: '', lastName: '', email: '', password: '',
+    firstName: '', lastName: '', email: '', password: '', phoneNumber: '',
     organizationId: String(org?.id ?? '')
   });
   const [loading, setLoading] = useState(false);
@@ -20,6 +20,8 @@ export default function RegisterPage() {
   const handle = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.organizationId) { toast.error('Organization not detected'); return; }
+    if (!form.phoneNumber.trim()) { toast.error('Mobile number is required'); return; }
+    if (!/^\+?[\d\s\-]{10,15}$/.test(form.phoneNumber.trim())) { toast.error('Enter a valid mobile number'); return; }
     setLoading(true);
     try {
       const { data } = await authApi.register({ ...form, organizationId: Number(form.organizationId) });
@@ -54,11 +56,11 @@ export default function RegisterPage() {
             </div>
           )}
           <h1 className="text-3xl font-black text-white leading-tight">{org?.name ?? 'Learning Portal'}</h1>
-          <p className="text-white/70 mt-2 text-sm">{org?.tagline ?? 'Start your learning journey today'}</p>
+          <p className="text-white/70 mt-2 text-sm">{org?.tagline ?? ''}</p>
         </div>
 
         <div className="relative space-y-4">
-          {[
+          {/* {[
             { emoji: '🎓', title: 'Expert-led courses', desc: 'Learn from industry professionals' },
             { emoji: '🏆', title: 'Earn certificates',  desc: 'Recognized credentials on completion' },
             { emoji: '🚀', title: 'Learn at your pace', desc: 'Access courses anytime, anywhere' },
@@ -70,7 +72,7 @@ export default function RegisterPage() {
                 <p className="text-white/60 text-xs mt-0.5">{item.desc}</p>
               </div>
             </div>
-          ))}
+          ))} */}
         </div>
 
         <p className="relative text-white/40 text-xs">
@@ -89,7 +91,7 @@ export default function RegisterPage() {
           <div className="mb-8">
             <h2 className="text-3xl font-black text-gray-900">Create account</h2>
             <p className="text-gray-500 mt-2 text-sm">
-              Joining <span className="font-semibold" style={{ color: 'var(--org-primary)' }}>{org?.name ?? 'the portal'}</span> as a student
+              {/* Joining <span className="font-semibold" style={{ color: 'var(--org-primary)' }}>{org?.name ?? 'the portal'}</span> as a student */}
             </p>
           </div>
 
@@ -113,6 +115,14 @@ export default function RegisterPage() {
               <input className="w-full px-3.5 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--org-primary)] focus:border-transparent bg-white transition placeholder-gray-300"
                 type="email" placeholder="you@example.com" required value={form.email}
                 onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">
+                Mobile number <span className="text-red-500">*</span>
+              </label>
+              <input className="w-full px-3.5 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--org-primary)] focus:border-transparent bg-white transition placeholder-gray-300"
+                type="tel" placeholder="+91 98765 43210" required value={form.phoneNumber}
+                onChange={e => setForm(f => ({ ...f, phoneNumber: e.target.value }))} />
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Password</label>

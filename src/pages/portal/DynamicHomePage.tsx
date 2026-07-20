@@ -18,7 +18,7 @@ import { TemplateBold, TemplateMinimal, TemplateDark } from '../../components/po
 
 const API_BASE = typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-  ? '' : 'https://api.worksupport360.com';
+  ? '' : 'https://lms.worksupport360.com';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Org-settings-driven sections — these wrap AROUND the existing template
@@ -423,6 +423,12 @@ export default function DynamicHomePage() {
     enabled: !!org?.id,
   });
 
+  const { data: reviews = [] } = useQuery({
+    queryKey: ['portal-reviews', org?.id],
+    queryFn: () => portalApi.getReviews(org!.id).then(r => r.data),
+    enabled: !!org?.id,
+  });
+
   // Inject custom HTML into page (runs after mount)
   useEffect(() => {
     if ((config as any)?.customHtml) {
@@ -464,6 +470,7 @@ export default function DynamicHomePage() {
     categories: categories as PublicCategory[],
     courses: ((coursesData as any)?.items ?? []) as PublicCourse[],
     instructors: instructors as any[],
+    reviews: reviews as any[],
     onCourseClick: (id) => navigate(`/course/${id}`),
     onNavigate: navigate,
     isAuthenticated,

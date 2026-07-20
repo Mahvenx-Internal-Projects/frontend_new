@@ -10,7 +10,7 @@ import { AboutUsTemplatePicker, ContactUsTemplatePicker } from './TemplatePicker
 
 const API_BASE = typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-  ? '' : 'https://api.worksupport360.com';
+  ? '' : 'https://lms.worksupport360.com';
 
 const tok = () => localStorage.getItem('lms_token') ?? '';
 

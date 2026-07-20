@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { notificationsApi } from '../../services/api';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Building2, Users, BookOpen, FolderTree,
@@ -7,7 +9,7 @@ import {
   BarChart3, CreditCard, Layout, Calendar,
   Video, ClipboardList, Target, CheckSquare,
   BarChart2, Briefcase, UserCheck, FileText,
-  ChevronRight, Search, Home
+  ChevronRight, Search, Home, Database, DollarSign
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useOrgStore } from '../../store/orgStore';
@@ -15,15 +17,33 @@ import clsx from 'clsx';
 
 type NavItem = { label: string; to: string; icon: any; badge?: string };
 
-const adminNav: NavItem[] = [
+const superAdminNav: NavItem[] = [
   { label: 'Dashboard',       to: '/dashboard/admin',           icon: LayoutDashboard },
   { label: 'Organizations',   to: '/dashboard/organizations',   icon: Building2 },
   { label: 'Users',           to: '/dashboard/users',           icon: Users },
   { label: 'Courses',         to: '/dashboard/courses',         icon: BookOpen },
   { label: 'Categories',      to: '/dashboard/categories',      icon: FolderTree },
   { label: 'Departments',     to: '/dashboard/departments',     icon: Briefcase },
-  { label: 'Mock Tests',      to: '/dashboard/mock-tests',      icon: ClipboardList },
+  { label: 'Assessments',     to: '/dashboard/mock-tests',      icon: ClipboardList },
   { label: 'Assignments',     to: '/dashboard/assignments',     icon: CheckSquare },
+  { label: 'Training Batches',to: '/dashboard/training-batches',icon: Calendar },
+  { label: 'Analytics',       to: '/dashboard/analytics',       icon: BarChart3 },
+  { label: 'Payments',        to: '/dashboard/payments',        icon: CreditCard },
+  { label: 'Homepage',        to: '/dashboard/homepage-editor', icon: Layout },
+  { label: 'Org Settings',    to: '/dashboard/org-settings',    icon: Settings },
+];
+
+const orgAdminNav: NavItem[] = [
+  { label: 'Dashboard',       to: '/dashboard/admin',           icon: LayoutDashboard },
+  { label: 'Users',           to: '/dashboard/users',           icon: Users },
+  { label: 'Courses',         to: '/dashboard/courses',         icon: BookOpen },
+  { label: 'Categories',      to: '/dashboard/categories',      icon: FolderTree },
+  { label: 'Departments',     to: '/dashboard/departments',     icon: Briefcase },
+  { label: 'Assessments',     to: '/dashboard/mock-tests',      icon: ClipboardList },
+  { label: 'Assignments',     to: '/dashboard/assignments',     icon: CheckSquare },
+  { label: 'Students Report', to: '/dashboard/students-report', icon: BarChart3 },
+  { label: 'Bench Resources', to: '/dashboard/bench-resources', icon: Briefcase },
+  { label: 'Payroll',         to: '/dashboard/payroll',         icon: DollarSign },
   { label: 'Training Batches',to: '/dashboard/training-batches',icon: Calendar },
   { label: 'Analytics',       to: '/dashboard/analytics',       icon: BarChart3 },
   { label: 'Payments',        to: '/dashboard/payments',        icon: CreditCard },
@@ -35,7 +55,7 @@ const instructorNav: NavItem[] = [
   { label: 'Dashboard',         to: '/dashboard/trainer',                   icon: LayoutDashboard },
   { label: 'My Courses',        to: '/dashboard/courses',                   icon: BookOpen },
   { label: 'Assignments',       to: '/dashboard/assignments',               icon: CheckSquare },
-  { label: 'Mock Tests',        to: '/dashboard/mock-tests',                icon: Target },
+  { label: 'Assessments',        to: '/dashboard/mock-tests',                icon: Target },
   { label: 'Training Batches',  to: '/dashboard/training-batches',           icon: Calendar },
   { label: 'Live Classes',      to: '/dashboard/trainer?tab=liveclasses',   icon: Video },
   { label: 'Interview Schedule',to: '/dashboard/trainer?tab=interviews',    icon: UserCheck },
@@ -49,14 +69,14 @@ const studentNav: NavItem[] = [
   { label: 'Course Catalog',     to: '/dashboard/catalog',       icon: BookOpen },
   { label: 'Training Schedule',  to: '/dashboard/live-classes',  icon: Calendar },
   { label: 'Assignments',        to: '/dashboard/assignments',   icon: FileText },
-  { label: 'Mock Tests',         to: '/dashboard/mock-tests',    icon: Target },
+  { label: 'Assessments',         to: '/dashboard/mock-tests',    icon: Target },
   { label: 'Interview Schedule', to: '/dashboard/interviews',    icon: UserCheck },
   { label: 'Certificates',       to: '/dashboard/certificates',  icon: Award },
   { label: 'Orders',             to: '/dashboard/orders',        icon: CreditCard },
 ];
 
 const navByRole: Record<string, NavItem[]> = {
-  SuperAdmin: adminNav, OrgAdmin: adminNav,
+  SuperAdmin: superAdminNav, OrgAdmin: orgAdminNav,
   Instructor: instructorNav, Student: studentNav,
 };
 
@@ -84,11 +104,61 @@ export default function DashboardLayout() {
   const navigate         = useNavigate();
   const location         = useLocation();
 
-  const [collapsed,    setCollapsed]    = useState(false);
+  // Defaults to collapsed on first visit; remembers the user's choice
+  // afterward via localStorage so it doesn't reset to collapsed every
+  // time they reload or come back later.
+  const [collapsed, setCollapsed] = useState(() => {
+    const saved = localStorage.getItem('lms_sidebar_collapsed');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('lms_sidebar_collapsed', String(collapsed));
+  }, [collapsed]);
   const [profileOpen,  setProfileOpen]  = useState(false);
   const [mobileOpen,   setMobileOpen]   = useState(false);
   const [viewRole,     setViewRole]     = useState<string>(user?.role ?? 'Student');
+  const [notifOpen,    setNotifOpen]    = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
+  const qc = useQueryClient();
+
+  const { data: notifData } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => notificationsApi.getMine().then(r => r.data),
+    enabled: !!user,
+    refetchInterval: 60000, // light polling — picks up new notifications within a minute without needing a full websocket setup
+  });
+  const notifications: any[] = notifData?.items ?? [];
+  const unreadCount: number = notifData?.unreadCount ?? 0;
+
+  const markReadMut = useMutation({
+    mutationFn: (id: number) => notificationsApi.markRead(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+  });
+  const markAllReadMut = useMutation({
+    mutationFn: () => notificationsApi.markAllRead(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+  });
+
+  // Close the notification dropdown on outside click
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, []);
+
+  function timeAgo(iso: string): string {
+    const diffMs = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+  }
 
   const primary   = org?.primaryColor   ?? '#6366f1';
   const secondary = org?.secondaryColor ?? '#8b5cf6';
@@ -110,9 +180,15 @@ export default function DashboardLayout() {
     navigate(homePath[role] ?? '/dashboard/student');
   };
 
-  const navItems     = navByRole[viewRole] ?? studentNav;
-  const switchRoles  = canViewAs[user?.role ?? 'Student'] ?? ['Student'];
-  const initials     = `${user?.firstName?.[0] ?? ''}${user?.lastName?.[0] ?? ''}`.toUpperCase();
+  const navItems    = navByRole[viewRole] ?? studentNav;
+  // Use the actual roles stored in the JWT (user.roles), which were set
+  // by the admin when creating/updating this user. Fall back to the
+  // hardcoded canViewAs map only if no roles array is present (e.g. for
+  // users who logged in before this feature was deployed).
+  const switchRoles = (user?.roles && user.roles.length > 0)
+    ? [...new Set([user.role, ...user.roles])] // deduplicate, primary role always first
+    : canViewAs[user?.role ?? 'Student'] ?? ['Student'];
+  const initials    = `${user?.firstName?.[0] ?? ''}${user?.lastName?.[0] ?? ''}`.toUpperCase();
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
@@ -184,6 +260,13 @@ export default function DashboardLayout() {
                        text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors">
             <Home className="w-4 h-4"/> Visit Portal
           </button>
+          {(user?.role === 'SuperAdmin' || user?.role === 'OrgAdmin') && (
+            <button onClick={() => navigate('/dashboard/seed')}
+              className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold
+                         text-indigo-500 hover:bg-indigo-50 hover:text-indigo-700 transition-colors mt-1">
+              <Database className="w-4 h-4"/> Seed Database
+            </button>
+          )}
         </div>
       )}
 
@@ -267,10 +350,56 @@ export default function DashboardLayout() {
             )}
 
             {/* Notifications */}
-            <button className="relative p-2 rounded-xl hover:bg-gray-100 transition-colors">
-              <Bell className="w-5 h-5 text-gray-500"/>
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 ring-2 ring-white"/>
-            </button>
+            <div className="relative" ref={notifRef}>
+              <button onClick={() => setNotifOpen(o => !o)}
+                className="relative p-2 rounded-xl hover:bg-gray-100 transition-colors">
+                <Bell className="w-5 h-5 text-gray-500"/>
+                {unreadCount > 0 && (
+                  <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 ring-2 ring-white"/>
+                )}
+              </button>
+
+              {notifOpen && (
+                <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                    <p className="font-semibold text-sm text-gray-900">Notifications</p>
+                    {unreadCount > 0 && (
+                      <button onClick={() => markAllReadMut.mutate()}
+                        className="text-xs font-medium hover:underline" style={{ color: primary }}>
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-96 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <div className="px-4 py-10 text-center text-sm text-gray-400">
+                        No notifications yet
+                      </div>
+                    ) : (
+                      notifications.map((n: any) => (
+                        <button key={n.id}
+                          onClick={() => {
+                            if (!n.isRead) markReadMut.mutate(n.id);
+                            setNotifOpen(false);
+                            if (n.linkUrl) navigate(n.linkUrl);
+                          }}
+                          className={clsx(
+                            'w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors flex gap-3',
+                            !n.isRead && 'bg-blue-50/40'
+                          )}>
+                          <div className={clsx('w-2 h-2 rounded-full mt-1.5 flex-shrink-0', !n.isRead ? 'bg-blue-500' : 'bg-transparent')} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">{n.title}</p>
+                            {n.body && <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.body}</p>}
+                            <p className="text-xs text-gray-400 mt-1">{timeAgo(n.createdAt)}</p>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Profile */}
             <div className="relative">

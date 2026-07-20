@@ -4,9 +4,14 @@ import axios from 'axios';
 // Production → use full API URL directly
 const isLocal = typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-const PORTAL_BASE = isLocal
-  ? '/api'
-  : (import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'https://api.worksupport360.com/api');
+const resolvePortalBase = () => {
+  if (isLocal) return '/api';
+  const configured = import.meta.env.VITE_API_URL?.trim();
+  if (!configured) return 'https://lms.worksupport360.com/api';
+  const normalized = configured.replace(/\/$/, '');
+  return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
+};
+const PORTAL_BASE = resolvePortalBase();
 
 const portalAxios = axios.create({
   baseURL: PORTAL_BASE,
@@ -48,6 +53,9 @@ export const portalApi = {
 
   getInstructors: (orgId: number) =>
     portalAxios.get(`/portal/${orgId}/instructors`),
+
+  getReviews: (orgId: number, limit = 9) =>
+    portalAxios.get(`/portal/${orgId}/reviews`, { params: { limit } }),
 };
 
 export type PublicCategory = {
@@ -74,6 +82,7 @@ export type PublicModule = {
 export type PublicLesson = {
   id: number; title: string; type: string;
   durationSecs: number; isPreview: boolean;
+  videoUrl?: string; content?: string;
 };
 
 export type OrgStats = {

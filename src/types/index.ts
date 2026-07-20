@@ -11,6 +11,7 @@ export interface User {
   avatarUrl?: string; role: UserRole; isActive: boolean;
   createdAt: string; lastLogin?: string;
   organizationId: number; organizationName: string;
+  roles?: string[]; // all assigned roles from JWT — drives the role switcher pills
 }
 
 export interface Organization {

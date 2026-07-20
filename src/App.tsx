@@ -23,6 +23,11 @@ import HomePageEditorPage   from './pages/admin/HomePageEditorPage';
 import PaymentTransactionsPage from './pages/admin/PaymentTransactionsPage';
 import LessonEditorPage     from './pages/admin/LessonEditorPage';
 import MockTestEditorPage   from './pages/admin/MockTestEditorPage';
+import ExamAttemptsPage     from './pages/admin/ExamAttemptsPage';
+
+import StudentsReportPage   from './pages/admin/StudentsReportPage';
+import BenchResourcesPage   from './pages/admin/BenchResourcesPage';
+import PayrollPage           from './pages/admin/PayrollPage';
 import TrainingBatchPage    from './pages/admin/TrainingBatchPage';
 
 // Trainer
@@ -44,6 +49,7 @@ import LessonPlayerPage     from './pages/student/LessonPlayerPage';
 // Mock tests
 import MockTestsListPage    from './pages/student/mock/MockTestsListPage';
 import MockTestPage         from './pages/student/mock/MockTestPage';
+import CodingExamPage      from './pages/student/mock/CodingExamPage';
 import MockTestAnalysisPage from './pages/student/mock/MockTestAnalysisPage';
 
 // Portal
@@ -124,7 +130,13 @@ export default function App() {
               {/* Mock tests - shared admin/instructor/student */}
               <Route path="mock-tests"               element={<MockTestsListPage />} />
               <Route path="mock-test-editor/:testId" element={<MockTestEditorPage />} />
+              <Route path="exam-attempts/:testId"    element={<ExamAttemptsPage />} />
+            
+              <Route path="students-report"         element={<StudentsReportPage />} />
+              <Route path="bench-resources"         element={<BenchResourcesPage />} />
+              <Route path="payroll"                 element={<PayrollPage />} />
               <Route path="mock-test/:testId"        element={<MockTestPage />} />
+              <Route path="coding-exam/:testId"      element={<CodingExamPage />} />
               <Route path="mock-analysis/:studentId" element={<MockTestAnalysisPage />} />
 
               {/* Trainer / Instructor */}

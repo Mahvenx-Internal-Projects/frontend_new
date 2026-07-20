@@ -14,7 +14,7 @@ import clsx from 'clsx';
 
 const API_BASE = typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-  ? '' : 'https://api.worksupport360.com';
+  ? '' : 'https://lms.worksupport360.com';
 
 
 // ─── Types ────────────────────────────────────────────────────
@@ -56,7 +56,40 @@ function fmtSecs(s: number) {
 // ─── Individual block editors ─────────────────────────────────
 function BlockEditor({ block, onChange }: { block: Block; onChange: (b: Block) => void }) {
   const u = (p: Partial<Block>) => onChange({ ...block, ...p });
-  // Normalize to PascalCase to handle old lowercase data from DB
+
+  // TEMPORARY DIAGNOSTIC — remove once PDF upload is confirmed working.
+  // Logs the exact raw value and type of block.type on every render, so
+  // DevTools Console will show definitively whether this code path runs
+  // and what the data actually looks like.
+  console.log('[BlockEditor] block.type =', JSON.stringify(block.type), '| typeof:', typeof block.type, '| full block:', block);
+
+  // PDF rendered directly here, completely bypassing the switch/normalize
+  // logic below — guarantees this always renders regardless of how
+  // block.type is cased in the data ('PDF', 'pdf', 'Pdf', etc).
+  if (String(block.type).toLowerCase() === 'pdf') {
+    console.log('[BlockEditor] PDF branch matched — rendering upload UI now.');
+    return (
+      <div className="space-y-4">
+        <FileUpload type="file" folder="lessons/pdfs" label="Upload PDF Document"
+          accept=".pdf,application/pdf"
+          onUploaded={(url, key) => u({ fileUrl: url, fileName: key.split('/').pop() })} currentUrl={block.fileUrl} />
+        {block.fileUrl && (
+          <div className="space-y-3 p-4 bg-red-50 rounded-xl border border-red-200">
+            <input className="input text-sm bg-white" placeholder="PDF display title"
+              value={block.fileName ?? ''} onChange={e => u({ fileName: e.target.value })} />
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 font-medium">
+              <input type="checkbox" className="rounded" checked={block.embedPdf ?? true}
+                onChange={e => u({ embedPdf: e.target.checked })} />
+              Show inline PDF viewer for students (they can also download)
+            </label>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Normalize to PascalCase to handle old lowercase data from DB (e.g.
+  // 'video' -> 'Video').
   const t = block.type ? (block.type.charAt(0).toUpperCase() + block.type.slice(1).toLowerCase()) as BlockType : block.type;
 
   switch (t) {
@@ -337,19 +370,32 @@ export default function LessonEditorPage() {
   useEffect(() => {
     if (isNew) return;
     setLoading(true);
+    console.log('[load] fetching lesson', lessonId, 'from', `${API_BASE}/api/lessons/${lessonId}`);
     fetch(`${API_BASE}/api/lessons/${lessonId}`, { headers: { Authorization: `Bearer ${token()}` } })
-      .then(r => r.json())
+      .then(async r => {
+        console.log('[load] response status:', r.status);
+        if (!r.ok) {
+          const text = await r.text();
+          throw new Error(`Failed to load lesson (${r.status}): ${text}`);
+        }
+        return r.json();
+      })
       .then(data => {
-        setMeta({ title: data.title, description: data.description ?? '', isPreview: data.isPreview, isPublished: data.isPublished, durationSecs: data.durationSecs });
+        console.log('[load] lesson data received:', data);
+        setMeta({ title: data.title ?? '', description: data.description ?? '', isPreview: data.isPreview ?? false, isPublished: data.isPublished ?? true, durationSecs: data.durationSecs ?? 0 });
         setBlocks((data.contentBlocks ?? []).sort((a: Block, b: Block) => a.order - b.order));
       })
-      .catch(() => toast.error('Failed to load lesson'))
+      .catch((err) => {
+        console.error('[load] FAILED:', err);
+        toast.error(err.message ?? 'Failed to load lesson');
+      })
       .finally(() => setLoading(false));
   }, [lessonId]);
 
   const save = async () => {
+    console.log('[save] clicked. meta:', meta, '| blocks:', blocks);
     if (!meta.title.trim()) { toast.error('Lesson title is required'); return; }
-    const missingDuration = blocks.some(b => b.type === 'Video' && b.videoUrl && !b.videoDurationSecs);
+    const missingDuration = blocks.some(b => String(b.type).toLowerCase() === 'video' && b.videoUrl && !b.videoDurationSecs);
     if (missingDuration) {
       toast.error('Please set the duration for every video block before saving');
       return;
@@ -358,6 +404,7 @@ export default function LessonEditorPage() {
     try {
       let id: number;
       if (isNew) {
+        console.log('[save] creating new lesson, POST', `${API_BASE}/api/lessons`);
         const res = await fetch(`${API_BASE}/api/lessons`, {
           method: 'POST', headers: authHeaders(),
           body: JSON.stringify({ ...meta, type: 'Mixed', displayOrder: 0, moduleId: Number(moduleId), parentLessonId: parentLessonId ? Number(parentLessonId) : null, videoUrl: null, fileUrl: null, content: null })
@@ -366,16 +413,19 @@ export default function LessonEditorPage() {
         const data = await res.json();
         id = data.id;
       } else {
+        console.log('[save] updating lesson, PUT', `${API_BASE}/api/lessons/${lessonId}`);
         const res = await fetch(`${API_BASE}/api/lessons/${lessonId}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(meta) });
         if (!res.ok) throw new Error(await res.text());
         id = Number(lessonId);
       }
       const reindexed = blocks.map((b, i) => ({ ...b, order: i }));
+      console.log('[save] saving blocks, PUT', `${API_BASE}/api/lessons/${id}/blocks`, reindexed);
       const bRes = await fetch(`${API_BASE}/api/lessons/${id}/blocks`, {
         method: 'PUT', headers: authHeaders(),
         body: JSON.stringify({ blocks: reindexed })
       });
       if (!bRes.ok) throw new Error(await bRes.text());
+      console.log('[save] success');
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
       toast.success(isNew ? 'Lesson created!' : 'Lesson saved!');
@@ -387,8 +437,15 @@ export default function LessonEditorPage() {
       qc.invalidateQueries({ queryKey: ['course-modules', courseId] });
       if (isNew) {
         navigate(`/dashboard/courses/${courseId}/lesson/${id}/edit`, { replace: true });
+      } else {
+        // Saving an EXISTING lesson's edits is a "I'm done with this
+        // lesson" action — return straight to the Content tab so the
+        // updated lesson/blocks are visible immediately, instead of
+        // requiring a manual click on the back arrow.
+        navigate(`/dashboard/courses/${courseId}/edit?tab=content${moduleId ? '&moduleId=' + moduleId : ''}`);
       }
     } catch (e: any) {
+      console.error('[save] FAILED:', e);
       toast.error(e.message ?? 'Failed to save');
     } finally {
       setSaving(false);
@@ -440,7 +497,7 @@ export default function LessonEditorPage() {
       <div className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <button className="btn-ghost flex-shrink-0" onClick={() => navigate(`/dashboard/courses/${courseId}/edit`)}>
+            <button className="btn-ghost flex-shrink-0" onClick={() => navigate(`/dashboard/courses/${courseId}/edit?tab=content${moduleId ? '&moduleId=' + moduleId : ''}`)}>
               <ArrowLeft className="w-4 h-4" />
             </button>
             <div className="min-w-0">
