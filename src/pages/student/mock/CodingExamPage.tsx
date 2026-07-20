@@ -25,6 +25,7 @@ export default function CodingExamPage() {
 
   const [phase, setPhase] = useState<'info' | 'mcq' | 'coding' | 'result'>('info');
   const [attemptId, setAttemptId] = useState<number | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
   const [mcqQuestions, setMcqQuestions] = useState<any[]>([]);
   const [codingQuestions, setCodingQuestions] = useState<any[]>([]);
   const [mcqAnswers, setMcqAnswers] = useState<Record<number, number | null>>({});
@@ -70,7 +71,11 @@ export default function CodingExamPage() {
       }
       try { document.documentElement.requestFullscreen?.(); } catch {}
     },
-    onError: (e: any) => toast.error(e.response?.data?.message ?? 'Could not start'),
+    onError: (e: any) => {
+      const msg = e.response?.data?.message ?? 'Could not start';
+      setStartError(msg);
+      if (!msg.toLowerCase().includes('attempt')) toast.error(msg);
+    },
   });
 
   const runMut = useMutation({
@@ -250,71 +255,74 @@ export default function CodingExamPage() {
           <p className="font-bold">📋 Rules:</p>
           <p>• Exam opens in fullscreen — do not exit</p>
           <p>• Switching tabs triggers a warning; 2nd violation = auto-submit</p>
-          <p>• Score ≥{PASS_THRESHOLD}% → qualified for next round</p>
+          <p>• Results will be communicated by the organization after evaluation</p>
           <p>• MCQ: 60% weight · Coding: 40% weight</p>
         </div>
-        <button className="btn-primary w-full justify-center py-3.5 font-black"
-          onClick={() => startMut.mutate()} disabled={startMut.isPending}>
-          {startMut.isPending ? 'Starting…' : 'Start Exam 🚀'}
-        </button>
+        {startError?.toLowerCase().includes('attempt') ? (
+          <div className="space-y-3">
+            <div className="flex items-start gap-3 bg-amber-50 border border-amber-300 rounded-2xl p-4 text-left">
+              <span className="text-xl">⛔</span>
+              <div>
+                <p className="font-black text-amber-800">Attempts Exhausted</p>
+                <p className="text-sm text-amber-700 mt-0.5">{startError}</p>
+                <p className="text-xs text-amber-600 mt-1">Contact your instructor if you need another attempt.</p>
+              </div>
+            </div>
+            <button className="btn-secondary w-full justify-center py-3"
+              onClick={() => navigate(-1)}>
+              ← Go Back
+            </button>
+          </div>
+        ) : startError ? (
+          <div className="space-y-3">
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm text-red-700 text-left">
+              <p className="font-bold mb-1">Cannot Start Exam</p>
+              <p>{startError}</p>
+            </div>
+            <button className="btn-primary w-full justify-center py-3.5 font-black"
+              onClick={() => { setStartError(null); startMut.mutate(); }} disabled={startMut.isPending}>
+              {startMut.isPending ? 'Starting…' : 'Try Again'}
+            </button>
+          </div>
+        ) : (
+          <button className="btn-primary w-full justify-center py-3.5 font-black"
+            onClick={() => startMut.mutate()} disabled={startMut.isPending}>
+            {startMut.isPending ? 'Starting…' : 'Start Exam 🚀'}
+          </button>
+        )}
       </div>
     </div>
   );
 
   // ─── RESULT SCREEN ─────────────────────────────────────────────
+  // ─── RESULT — show thank you, NOT score ─────────────────────
   if (phase === 'result' && result) {
-    const qualified = result.qualified;
     const orgName = user?.organizationName ?? 'our organization';
     return (
       <div className="max-w-xl mx-auto py-8 space-y-5">
         <div className="bg-white rounded-3xl shadow-xl p-10 text-center">
-          <div className="w-24 h-24 rounded-full mx-auto flex items-center justify-center shadow-2xl mb-5"
-            style={{ background: qualified ? 'linear-gradient(135deg,#10b981,#059669)' : 'linear-gradient(135deg,#ef4444,#dc2626)' }}>
-            {qualified ? <CheckCircle2 className="w-12 h-12 text-white" /> : <XCircle className="w-12 h-12 text-white" />}
+          <div className="w-24 h-24 rounded-full mx-auto flex items-center justify-center shadow-2xl mb-6"
+            style={{ background: 'linear-gradient(135deg,var(--org-primary),var(--org-secondary))' }}>
+            <CheckCircle2 className="w-12 h-12 text-white" />
           </div>
-          {qualified ? (
-            <>
-              <h1 className="text-3xl font-black text-gray-900 mb-2">🎉 Congratulations!</h1>
-              <p className="text-gray-600 text-base mb-4">
-                You have successfully cleared the <strong>{test?.title}</strong> assessment.
-              </p>
-              <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-6 text-green-800 text-sm">
-                <p className="font-bold mb-1">✅ You are qualified for the next round!</p>
-                <p><strong>{orgName}</strong> will contact you shortly with further details about the next steps in your selection process.</p>
-              </div>
-            </>
-          ) : (
-            <>
-              <h1 className="text-3xl font-black text-gray-900 mb-2">Thank You for Attending</h1>
-              <p className="text-gray-600 text-base mb-4">
-                Thank you for attending the <strong>{test?.title}</strong> assessment hosted by <strong>{orgName}</strong>.
-              </p>
-              <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-6 text-red-800 text-sm">
-                <p className="font-bold mb-1">We regret to inform you that you did not qualify for the next round.</p>
-                <p>Your score did not meet the required threshold of {PASS_THRESHOLD}%. We encourage you to continue practicing and try again in future assessments.</p>
-              </div>
-            </>
-          )}
-
-          <div className="grid grid-cols-3 gap-3 mb-6">
-            {[
-              { label: 'Combined Score', value: `${result.combinedScore}%`, highlight: true },
-              { label: 'MCQ Score', value: `${result.scorePct}%` },
-              { label: 'Required', value: `${PASS_THRESHOLD}%` },
-            ].map(s => (
-              <div key={s.label} className={clsx('rounded-2xl p-4', s.highlight ? 'text-white' : 'bg-gray-50')}
-                style={s.highlight ? { background: 'linear-gradient(135deg,var(--org-primary),var(--org-secondary))' } : {}}>
-                <p className={clsx('text-2xl font-black', s.highlight ? 'text-white' : 'text-gray-900')}>{s.value}</p>
-                <p className={clsx('text-xs mt-1', s.highlight ? 'text-white/70' : 'text-gray-500')}>{s.label}</p>
-              </div>
-            ))}
+          <h1 className="text-3xl font-black text-gray-900 mb-3">
+            Thank You for Attending!
+          </h1>
+          <p className="text-gray-600 text-base leading-relaxed mb-2">
+            You have successfully completed the <strong>{test?.title}</strong> assessment.
+          </p>
+          <p className="text-gray-600 text-base leading-relaxed mb-8">
+            <strong>{orgName}</strong> will review your performance and get back to you shortly. Please check your email for further updates.
+          </p>
+          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 text-sm text-blue-800 text-left mb-8">
+            <p className="font-bold mb-2">📧 What happens next?</p>
+            <p>• You will receive an email with your result within 30 minutes</p>
+            <p>• Our team will contact you if you qualify for the next round</p>
+            <p>• Keep an eye on your registered email inbox</p>
           </div>
-          <div className="h-3 bg-gray-100 rounded-full overflow-hidden mb-6">
-            <div className="h-full rounded-full transition-all duration-1000"
-              style={{ width: `${result.combinedScore}%`, background: qualified ? '#10b981' : 'linear-gradient(90deg,var(--org-primary),var(--org-secondary))' }} />
-          </div>
-          <button className="btn-secondary w-full justify-center" onClick={() => navigate('/dashboard/mock-tests')}>
-            Back to Assessments
+          <button className="btn-primary w-full justify-center py-3.5 font-bold"
+            onClick={() => navigate('/dashboard/my-courses')}>
+            Back to My Courses
           </button>
         </div>
       </div>

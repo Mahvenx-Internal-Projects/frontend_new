@@ -7,7 +7,7 @@ import { useOrgStore } from '../../store/orgStore';
 
 const API_BASE = typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-  ? '' : 'https://api.worksupport360.com';
+  ? '' : 'https://lms.worksupport360.com';
 
 function QuickContactForm({ orgId, primary }: { orgId: number; primary: string }) {
   const [form, setForm] = useState({ name: '', phone: '', email: '', message: '' });

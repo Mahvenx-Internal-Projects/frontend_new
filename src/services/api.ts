@@ -132,9 +132,12 @@ export const certsApi = {
 
 // ─── Dashboard ────────────────────────────────────────────────
 export const dashboardApi = {
-  admin:   ()          => api.get('/dashboard/admin'),
-  org:     (id: number) => api.get(`/dashboard/org/${id}`),
-  student: (id: number) => api.get(`/dashboard/student/${id}`),
+  admin:         ()          => api.get('/dashboard/admin'),
+  org:           (id: number) => api.get(`/dashboard/org/${id}`),
+  student:       (id: number) => api.get(`/dashboard/student/${id}`),
+  orgStudents:   (orgId: number) => api.get(`/dashboard/org/${orgId}/students`),
+  studentReport: (orgId: number, studentId: number) => api.get(`/dashboard/org/${orgId}/students/${studentId}/report`),
+  courseStudents:(orgId: number, courseId: number)  => api.get(`/dashboard/org/${orgId}/course/${courseId}/students`),
 };
 
 // ─── Cart ─────────────────────────────────────────────────────
@@ -234,14 +237,20 @@ export const mockTestApi = {
   update:     (id: number, d: object) => api.put(`/mocktests/${id}`, d),
   delete:     (id: number)     => api.delete(`/mocktests/${id}`),
   publish:        (id: number) => api.put(`/mocktests/${id}/publish`),
+  linkCourse:          (examId: number, courseId: number | null) => api.patch(`/mocktests/${examId}/link-course`, { courseId }),
+  setTotalQuestions:   (examId: number, n: number) => api.patch(`/mocktests/${examId}/set-total-questions`, { totalQuestions: n }),
   addQuestion:    (testId: number, d: object) => api.post(`/mocktests/${testId}/questions`, d),
   updateQuestion: (qId: number, d: object)   => api.put(`/mocktests/questions/${qId}`, d),
-  deleteQuestion: (qId: number) => api.delete(`/mocktests/questions/${qId}`),
+  deleteQuestion:       (qId: number) => api.delete(`/mocktests/questions/${qId}`),
+  toggleQuestionActive: (qId: number) => api.patch(`/mocktests/questions/${qId}/toggle-active`),
   start:          (d: object) => api.post('/mocktests/start', d),
   submit:         (d: object) => api.post('/mocktests/submit', d),
   getAttempt:     (attemptId: number) => api.get(`/mocktests/attempt/${attemptId}`),
   getAnalysis:    (studentId: number) => api.get(`/mocktests/analysis/student/${studentId}`),
-  getLeaderboard: (testId: number) => api.get(`/mocktests/${testId}/leaderboard`),
+  getMyAttempt:        (testId: number, studentId: number) => api.get(`/mocktests/${testId}/my-attempt`, { params: { studentId } }),
+  getAllAttempts:       (testId: number) => api.get(`/mocktests/${testId}/attempts`),
+  markCoding:          (attemptId: number, questionId: number, marksAwarded: number) => api.patch(`/mocktests/attempt/${attemptId}/mark-coding`, { questionId, marksAwarded }),
+  sendResultEmail:     (attemptId: number) => api.post(`/mocktests/attempt/${attemptId}/send-result-email`),
 };
 
 export const interviewApi = {
@@ -271,9 +280,62 @@ export const notificationsApi = {
   delete:      (id: number)         => api.delete(`/notifications/${id}`),
 };
 
+// ─── Judge0 CE — Free public compiler, no installation needed ──
+// Supports: JavaScript (Node.js), Python, Java, C++, C#, etc.
+// Language IDs: https://ce.judge0.com/languages/
+const JUDGE0_URL  = 'https://judge0-ce.p.rapidapi.com';
+const JUDGE0_KEY  = 'judge0-ce'; // Public free tier — no key needed via this endpoint
+const LANG_IDS: Record<string, number> = {
+  js: 63, javascript: 63,   // Node.js 12.14.0
+  python: 71, python3: 71,  // Python 3.8.1
+  java: 62,                 // Java 13.0.1
+  cpp: 54, 'c++': 54,       // C++ 17
+  csharp: 51, 'c#': 51,     // C# Mono 6.6.0
+};
+
+async function judge0Run(code: string, language: string, stdin: string) {
+  const langId = LANG_IDS[language.toLowerCase()] ?? 63; // default JS
+  const encoded = (s: string) => btoa(unescape(encodeURIComponent(s)));
+
+  // Submit
+  const sub = await fetch('https://ce.judge0.com/submissions?base64_encoded=true&wait=true', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      language_id: langId,
+      source_code: encoded(code),
+      stdin: encoded(stdin),
+      cpu_time_limit: 5,
+      memory_limit: 128000,
+    }),
+  });
+  const result = await sub.json();
+
+  const stdout   = result.stdout   ? decodeURIComponent(escape(atob(result.stdout)))   : '';
+  const stderr   = result.stderr   ? decodeURIComponent(escape(atob(result.stderr)))   : '';
+  const compile  = result.compile_output ? decodeURIComponent(escape(atob(result.compile_output))) : '';
+  const statusId = result.status?.id ?? 0;
+  // Status IDs: 1=In Queue, 2=Processing, 3=Accepted, 4=Wrong Answer, 5=TLE, 6=CE, 11+=RE
+  const status = statusId === 3 ? 'Accepted'
+    : statusId === 6 ? 'CompileError'
+    : statusId === 5 ? 'TimeLimitExceeded'
+    : statusId >= 7 ? 'RuntimeError'
+    : result.status?.description ?? 'Error';
+
+  return {
+    data: {
+      stdout: stdout.trimEnd(),
+      stderr: stderr || compile,
+      status,
+      timeMs: result.time ? Math.round(parseFloat(result.time) * 1000) : 0,
+      compileOutput: compile,
+    }
+  };
+}
+
 export const judgeApi = {
   run: (code: string, language: string, input: string) =>
-    api.post('/judge/run', { code, language, input }),
+    judge0Run(code, language, input),
   submit: (codingQuestionId: number, code: string, language: string) =>
     api.post(`/judge/submit/${codingQuestionId}`, { code, language }),
   createCodingQuestion: (data: any) =>

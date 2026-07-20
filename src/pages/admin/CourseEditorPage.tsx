@@ -15,7 +15,7 @@ import clsx from 'clsx';
 
 const API_BASE = typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-  ? '' : 'https://api.worksupport360.com';
+  ? '' : 'https://lms.worksupport360.com';
 
 
 function fmtSecs(s: number) {
@@ -225,10 +225,14 @@ export default function CourseEditorPage() {
     queryFn: () => categoriesApi.getAll(user?.organizationId).then(r => r.data),
   });
 
-  // All published exams in this org (for the "assign exam" dropdown)
+  // All PUBLISHED exams in this org (only published exams can be linked to courses)
   const { data: allExams = [] } = useQuery({
     queryKey: ['exams-org', user?.organizationId],
-    queryFn: () => mockTestApi.getAll({ orgId: user?.organizationId }).then((r: any) => r.data?.items ?? r.data ?? []),
+    queryFn: () => mockTestApi.getAll({ orgId: user?.organizationId }).then((r: any) => {
+      const all = r.data?.items ?? r.data ?? [];
+      // Only show Published exams in the link dropdown
+      return all.filter((e: any) => e.status === 'Published');
+    }),
     enabled: !!user?.organizationId && isEdit,
   });
 
@@ -241,14 +245,14 @@ export default function CourseEditorPage() {
   const linkedExam = (linkedExams as any[])[0] ?? null;
 
   const attachExamMut = useMutation({
-    mutationFn: (examId: number) => mockTestApi.update(examId, { courseId: Number(id) }),
-    onSuccess: () => { toast.success('Exam linked to course!'); refetchLinkedExam(); },
-    onError: () => toast.error('Failed to link exam'),
+    mutationFn: (examId: number) => mockTestApi.linkCourse(examId, Number(id)),
+    onSuccess: () => { toast.success('Exam linked to course!'); refetchLinkedExam(); qc.invalidateQueries({ queryKey: ['exams-org'] }); },
+    onError: (e: any) => toast.error(e.response?.data?.message ?? 'Failed to link exam — make sure backend is updated'),
   });
   const detachExamMut = useMutation({
-    mutationFn: (examId: number) => mockTestApi.update(examId, { courseId: null }),
-    onSuccess: () => { toast.success('Exam unlinked'); refetchLinkedExam(); },
-    onError: () => toast.error('Failed to unlink exam'),
+    mutationFn: (examId: number) => mockTestApi.linkCourse(examId, null),
+    onSuccess: () => { toast.success('Exam unlinked'); refetchLinkedExam(); qc.invalidateQueries({ queryKey: ['exams-org'] }); },
+    onError: (e: any) => toast.error(e.response?.data?.message ?? 'Failed to unlink exam'),
   });
 
   const isInstructorRole = user?.role === 'Instructor';
@@ -297,7 +301,9 @@ export default function CourseEditorPage() {
         organizationId: user!.organizationId,
         enforceSequentialLessons: courseForm.enforceSequentialLessons,
       };
-      return isEdit ? coursesApi.update(Number(id), payload) : coursesApi.create(payload);
+      if (isEdit) return coursesApi.update(Number(id), payload);
+      // On create, explicitly pass status so Draft/Published is respected from the start
+      return coursesApi.create({ ...payload, status: courseForm.status ?? 'Draft' });
     },
     onSuccess: (res: any) => {
       toast.success('Course saved!');
@@ -650,7 +656,6 @@ export default function CourseEditorPage() {
                 <p className="text-xs text-gray-400 mb-4">Pick an assessment from your organisation to link to this course. Students will see the exam at the bottom of their course page.</p>
                 <div className="space-y-2">
                   {(allExams as any[])
-                    .filter((e: any) => !e.courseId || e.courseId === Number(id))
                     .map((exam: any) => {
                       const isLinked = linkedExam?.id === exam.id;
                       return (
@@ -815,8 +820,6 @@ export default function CourseEditorPage() {
           </div>
         </div>
       </Modal>
-
-
     </div>
   );
 }

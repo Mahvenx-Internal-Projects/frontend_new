@@ -113,7 +113,7 @@ export default function ExamPage() {
           {[
             { label: 'Questions', value: questions.length },
             { label: 'Time Limit', value: `${exam?.timeLimitMins} min` },
-            { label: 'Pass Mark', value: `${exam?.passMarkPercent}%` },
+            // { label: 'Pass Mark', value: `${exam?.passMarkPercent}%` },
           ].map(s => (
             <div key={s.label} className="bg-gray-50 rounded-xl p-3">
               <p className="text-xl font-bold text-gray-900">{s.value}</p>

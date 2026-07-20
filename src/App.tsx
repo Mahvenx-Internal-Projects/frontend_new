@@ -23,6 +23,11 @@ import HomePageEditorPage   from './pages/admin/HomePageEditorPage';
 import PaymentTransactionsPage from './pages/admin/PaymentTransactionsPage';
 import LessonEditorPage     from './pages/admin/LessonEditorPage';
 import MockTestEditorPage   from './pages/admin/MockTestEditorPage';
+import ExamAttemptsPage     from './pages/admin/ExamAttemptsPage';
+
+import StudentsReportPage   from './pages/admin/StudentsReportPage';
+import BenchResourcesPage   from './pages/admin/BenchResourcesPage';
+import PayrollPage           from './pages/admin/PayrollPage';
 import TrainingBatchPage    from './pages/admin/TrainingBatchPage';
 
 // Trainer
@@ -125,7 +130,12 @@ export default function App() {
               {/* Mock tests - shared admin/instructor/student */}
               <Route path="mock-tests"               element={<MockTestsListPage />} />
               <Route path="mock-test-editor/:testId" element={<MockTestEditorPage />} />
-              <Route path="mock-test/:testId"        element={<CodingExamPage />} />
+              <Route path="exam-attempts/:testId"    element={<ExamAttemptsPage />} />
+            
+              <Route path="students-report"         element={<StudentsReportPage />} />
+              <Route path="bench-resources"         element={<BenchResourcesPage />} />
+              <Route path="payroll"                 element={<PayrollPage />} />
+              <Route path="mock-test/:testId"        element={<MockTestPage />} />
               <Route path="coding-exam/:testId"      element={<CodingExamPage />} />
               <Route path="mock-analysis/:studentId" element={<MockTestAnalysisPage />} />
 

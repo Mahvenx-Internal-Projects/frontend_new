@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Play, Pencil, Trash2, Clock, Target,
-  CheckCircle2, Award, BarChart3, Users, Eye, X
+  CheckCircle2, Award, BarChart3, Users, Eye, X,
+  BookOpen, ChevronDown
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { mockTestApi } from '../../../services/api';
+import { mockTestApi, enrollmentsApi, coursesApi } from '../../../services/api';
 import { useAuthStore } from '../../../store/authStore';
 import clsx from 'clsx';
 
@@ -18,25 +19,70 @@ const diffColors: Record<string,string> = {
 };
 
 export default function MockTestsListPage() {
-  const navigate  = useNavigate();
-  const { user }  = useAuthStore();
-  const qc        = useQueryClient();
+  const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const qc = useQueryClient();
   const isAdmin = ['SuperAdmin', 'OrgAdmin', 'Instructor'].includes(user?.role ?? '');
 
+  // ── Selected course filter (student view) ─────────────────
+  const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
+
+  // ── Admin create form ──────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({
     title: '', description: '', topic: 'General',
     difficulty: 'Mixed', timeLimitMins: '30',
-    totalQuestions: '0', passMarkPercent: '60',
+    totalQuestions: '0', passMarkPercent: '80',
     randomizeQuestions: true, maxAttempts: '1',
+    courseId: '',
   });
 
-  const { data: tests = [], isLoading } = useQuery({
-    queryKey: ['mock-tests', user?.organizationId],
-    queryFn: () => mockTestApi.getAll({ orgId: user?.organizationId, status: isAdmin ? undefined : 'Published' }).then(r => r.data),
-    enabled: !!user?.organizationId,
+  // ── Student: fetch enrolled courses ───────────────────────
+  const { data: enrollments = [] } = useQuery({
+    queryKey: ['my-enrollments-for-exam', user?.id],
+    queryFn: () => enrollmentsApi.getByUser(user!.id).then(r => r.data),
+    enabled: !!user?.id && !isAdmin,
   });
 
+  // ── Student: fetch courses details for enrolled courses ───
+  const { data: enrolledCourses = [] } = useQuery({
+    queryKey: ['enrolled-courses-detail', (enrollments as any[]).map((e:any) => e.courseId).join(',')],
+    queryFn: async () => {
+      const ids = (enrollments as any[]).map((e: any) => e.courseId);
+      if (!ids.length) return [];
+      const results = await Promise.all(ids.map((id: number) => coursesApi.get(id).then(r => r.data)));
+      return results;
+    },
+    enabled: !isAdmin && (enrollments as any[]).length > 0,
+  });
+
+  // ── Admin: all org courses for create form dropdown ───────
+  const { data: allOrgCourses = [] } = useQuery({
+    queryKey: ['courses-for-exam-create', user?.organizationId],
+    queryFn: () => coursesApi.getAll({ orgId: user?.organizationId }).then((r: any) => r.data?.items ?? r.data ?? []),
+    enabled: !!user?.organizationId && isAdmin,
+  });
+
+  // ── Fetch exams ───────────────────────────────────────────
+  const { data: rawTests = [], isLoading } = useQuery({
+    queryKey: ['mock-tests', user?.organizationId, selectedCourseId, isAdmin],
+    queryFn: () => {
+      const params: any = { orgId: user?.organizationId };
+      if (!isAdmin) params.status = 'Published';
+      if (selectedCourseId) params.courseId = selectedCourseId;
+      return mockTestApi.getAll(params).then((r: any) => r.data?.items ?? r.data ?? []);
+    },
+    enabled: !!user?.organizationId && (isAdmin || selectedCourseId !== null),
+  });
+
+  // Student: only show exams linked to their enrolled courses
+  const tests = isAdmin
+    ? (rawTests as any[])
+    : (rawTests as any[]).filter((t: any) =>
+        t.courseId && (enrollments as any[]).some((e: any) => e.courseId === t.courseId)
+      );
+
+  // ── Admin mutations ───────────────────────────────────────
   const createMut = useMutation({
     mutationFn: () => mockTestApi.create({
       ...form,
@@ -44,11 +90,12 @@ export default function MockTestsListPage() {
       totalQuestions:   Number(form.totalQuestions),
       passMarkPercent:  Number(form.passMarkPercent),
       maxAttempts:      Number(form.maxAttempts),
+      courseId:         form.courseId ? Number(form.courseId) : undefined,
       organizationId:   user!.organizationId,
       createdById:      user!.id,
     }),
     onSuccess: (res: any) => {
-      toast.success('Mock test created!');
+      toast.success('Assessment created!');
       qc.invalidateQueries({ queryKey: ['mock-tests'] });
       setShowCreate(false);
       navigate(`/dashboard/mock-test-editor/${res.data.id}`);
@@ -59,202 +106,202 @@ export default function MockTestsListPage() {
   const deleteMut = useMutation({
     mutationFn: (id: number) => mockTestApi.delete(id),
     onSuccess: () => { toast.success('Deleted'); qc.invalidateQueries({ queryKey: ['mock-tests'] }); },
+    onError: () => toast.error('Failed to delete'),
   });
 
   const publishMut = useMutation({
     mutationFn: (id: number) => mockTestApi.publish(id),
-    onSuccess: () => { toast.success('Test published — visible to students now!'); qc.invalidateQueries({ queryKey: ['mock-tests'] }); },
-    onError: () => toast.error('Failed to publish'),
+    onSuccess: () => { toast.success('Published!'); qc.invalidateQueries({ queryKey: ['mock-tests'] }); },
   });
 
-  const testList = tests as any[];
+  const startExam = (t: any) => {
+    const hasCoding = t.hasCodingQuestions || t.questionTypes?.includes('Coding');
+    navigate(hasCoding ? `/dashboard/coding-exam/${t.id}` : `/dashboard/mock-test/${t.id}`);
+  };
 
+  // ─── STUDENT VIEW ────────────────────────────────────────
+  if (!isAdmin) {
+    const ec = enrolledCourses as any[];
+    return (
+      <div className="space-y-5 max-w-3xl">
+        <div>
+          <h1 className="text-2xl font-black text-gray-900">Assessments</h1>
+          <p className="text-sm text-gray-400 mt-0.5">Select a course to view its assessment</p>
+        </div>
+
+        {/* Course dropdown */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <label className="label flex items-center gap-1.5 mb-2">
+            <BookOpen className="w-3.5 h-3.5 text-indigo-500" /> Select Your Course
+          </label>
+          <select
+            className="input"
+            value={selectedCourseId ?? ''}
+            onChange={e => setSelectedCourseId(e.target.value ? Number(e.target.value) : null)}>
+            <option value="">— Choose an enrolled course —</option>
+            {ec.map((c: any) => (
+              <option key={c.id} value={c.id}>{c.title}</option>
+            ))}
+          </select>
+          {ec.length === 0 && (
+            <p className="text-xs text-gray-400 mt-2">You are not enrolled in any courses yet.</p>
+          )}
+        </div>
+
+        {/* Exam list for selected course */}
+        {selectedCourseId && (
+          isLoading ? (
+            <div className="text-center py-10 text-gray-400">Loading assessments…</div>
+          ) : tests.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-10 text-center">
+              <Award className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+              <p className="font-bold text-gray-400">No assessment linked to this course yet</p>
+              <p className="text-xs text-gray-400 mt-1">Check back later or contact your instructor.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {tests.map((t: any) => (
+                <div key={t.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <h3 className="font-bold text-gray-900">{t.title}</h3>
+                        <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full', diffColors[t.difficulty] ?? 'bg-gray-100 text-gray-600')}>{t.difficulty}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-3 text-xs text-gray-400">
+                        <span className="flex items-center gap-1"><Clock className="w-3 h-3"/>{t.timeLimitMins} min</span>
+                        <span className="flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/>{t.totalQuestions || 20} questions</span>
+                        <span className="flex items-center gap-1"><Award className="w-3 h-3"/>{t.maxAttempts} attempt{t.maxAttempts !== 1 ? 's' : ''}</span>
+                      </div>
+                    </div>
+                    <button className="btn-primary shrink-0" onClick={() => startExam(t)}>
+                      <Play className="w-4 h-4" /> Start Exam
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        )}
+
+        {!selectedCourseId && ec.length > 0 && (
+          <div className="text-center py-10 text-gray-300">
+            <ChevronDown className="w-8 h-8 mx-auto mb-2" />
+            <p className="text-sm">Select a course above to see its assessment</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ─── ADMIN / INSTRUCTOR VIEW ─────────────────────────────
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="page-title flex items-center gap-2">
-            <Target className="w-6 h-6" style={{color:'var(--org-primary)'}}/>
-            {isAdmin ? 'Assessments Management' : 'Assessments'}
-          </h1>
-          <p className="page-sub">
-            {isAdmin ? 'Create and manage assessment tests' : 'Practice tests with instant evaluation'}
-          </p>
+          <h1 className="text-2xl font-black text-gray-900">Assessments</h1>
+          <p className="text-sm text-gray-400 mt-0.5">{(tests as any[]).length} total</p>
         </div>
-        {isAdmin && (
-          <button className="btn-primary" onClick={() => setShowCreate(true)}>
-            <Plus className="w-4 h-4"/> Create Mock Test
-          </button>
-        )}
+        <button className="btn-primary" onClick={() => setShowCreate(true)}>
+          <Plus className="w-4 h-4" /> New Assessment
+        </button>
       </div>
 
       {/* Create form */}
       {showCreate && (
-        <div className="bg-white rounded-2xl border-2 border-[var(--org-primary)]/30 shadow-sm p-6 space-y-4">
-          <div className="flex items-center justify-between">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+          <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-gray-900">New Assessment</h3>
-            <button onClick={() => setShowCreate(false)} className="p-2 rounded-xl hover:bg-gray-100"><X className="w-4 h-4"/></button>
+            <button className="btn-ghost p-1.5" onClick={() => setShowCreate(false)}><X className="w-4 h-4"/></button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
               <label className="label">Title *</label>
-              <input className="input" placeholder="e.g. Full Stack Developer Assessment"
+              <input className="input" placeholder="e.g. Python Full Stack Assessment"
                 value={form.title} onChange={e => setForm(f => ({...f, title: e.target.value}))}/>
             </div>
             <div className="sm:col-span-2">
-              <label className="label">Description</label>
-              <textarea className="input" rows={2} placeholder="What does this test assess?"
-                value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))}/>
-            </div>
-            <div>
-              <label className="label">Topic</label>
-              <input className="input" placeholder="e.g. Web Development"
-                value={form.topic} onChange={e => setForm(f => ({...f, topic: e.target.value}))}/>
-            </div>
-            <div>
-              <label className="label">Difficulty</label>
-              <select className="input" value={form.difficulty} onChange={e => setForm(f => ({...f, difficulty: e.target.value}))}>
-                {['Easy','Medium','Hard','Mixed'].map(d => <option key={d}>{d}</option>)}
+              <label className="label flex items-center gap-1.5"><BookOpen className="w-3.5 h-3.5 text-gray-400"/>Link to Course (optional)</label>
+              <select className="input" value={form.courseId} onChange={e => setForm(f => ({...f, courseId: e.target.value}))}>
+                <option value="">— Not linked to any course —</option>
+                {(allOrgCourses as any[]).map((c: any) => <option key={c.id} value={c.id}>{c.title}</option>)}
               </select>
             </div>
             <div>
-              <label className="label">Time Limit (minutes)</label>
-              <input className="input" type="number" min={5}
-                value={form.timeLimitMins} onChange={e => setForm(f => ({...f, timeLimitMins: e.target.value}))}/>
-            </div>
-            <div>
-              <label className="label">Total Questions</label>
-              <input className="input" type="number" min={1}
-                value={form.totalQuestions} onChange={e => setForm(f => ({...f, totalQuestions: e.target.value}))}/>
+              <label className="label">Time Limit (mins)</label>
+              <input className="input" type="number" value={form.timeLimitMins}
+                onChange={e => setForm(f => ({...f, timeLimitMins: e.target.value}))}/>
             </div>
             <div>
               <label className="label">Pass Mark %</label>
-              <input className="input" type="number" min={1} max={100}
-                value={form.passMarkPercent} onChange={e => setForm(f => ({...f, passMarkPercent: e.target.value}))}/>
+              <input className="input" type="number" value={form.passMarkPercent}
+                onChange={e => setForm(f => ({...f, passMarkPercent: e.target.value}))}/>
+            </div>
+            <div>
+              <label className="label">Questions Shown</label>
+              <input className="input" type="number" placeholder="0 = all"
+                value={form.totalQuestions} onChange={e => setForm(f => ({...f, totalQuestions: e.target.value}))}/>
             </div>
             <div>
               <label className="label">Max Attempts</label>
-              <input className="input" type="number" min={1}
-                value={form.maxAttempts} onChange={e => setForm(f => ({...f, maxAttempts: e.target.value}))}/>
-            </div>
-            <div className="flex items-center gap-2">
-              <input type="checkbox" id="rand" checked={form.randomizeQuestions}
-                onChange={e => setForm(f => ({...f, randomizeQuestions: e.target.checked}))}/>
-              <label htmlFor="rand" className="text-sm font-medium text-gray-700 cursor-pointer">Randomize questions each attempt</label>
+              <input className="input" type="number" value={form.maxAttempts}
+                onChange={e => setForm(f => ({...f, maxAttempts: e.target.value}))}/>
             </div>
           </div>
-          <div className="flex gap-3 pt-2">
-            <button className="btn-secondary flex-1 justify-center" onClick={() => setShowCreate(false)}>Cancel</button>
-            <button className="btn-primary flex-1 justify-center" onClick={() => createMut.mutate()}
-              disabled={!form.title || createMut.isPending}>
-              {createMut.isPending ? 'Creating…' : 'Create & Add Questions →'}
+          <div className="flex gap-3 mt-4">
+            <button className="btn-primary" onClick={() => createMut.mutate()} disabled={!form.title || createMut.isPending}>
+              {createMut.isPending ? 'Creating…' : 'Create & Add Questions'}
             </button>
+            <button className="btn-secondary" onClick={() => setShowCreate(false)}>Cancel</button>
           </div>
         </div>
       )}
 
-      {/* Test list */}
+      {/* Admin exam list */}
       {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {[...Array(3)].map((_,i) => <div key={i} className="h-48 bg-gray-100 animate-pulse rounded-2xl"/>)}
-        </div>
-      ) : testList.length === 0 ? (
-        <div className="bg-white rounded-2xl border-2 border-dashed border-gray-200 p-16 text-center">
-          <Target className="w-14 h-14 mx-auto mb-4 text-gray-200"/>
-          <p className="font-bold text-gray-500 text-lg">No assessments yet</p>
-          {isAdmin && (
-            <button className="btn-primary mt-4" onClick={() => setShowCreate(true)}>
-              <Plus className="w-4 h-4"/> Create First Mock Test
-            </button>
-          )}
+        <div className="text-center py-10 text-gray-400">Loading…</div>
+      ) : (tests as any[]).length === 0 ? (
+        <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center">
+          <Award className="w-10 h-10 text-gray-200 mx-auto mb-3"/>
+          <p className="font-bold text-gray-400">No assessments yet</p>
+          <button className="btn-primary mt-4" onClick={() => setShowCreate(true)}><Plus className="w-4 h-4"/>Create First Assessment</button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {testList.map((t:any) => (
-            <div key={t.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex flex-col overflow-hidden">
-              {/* Top bar */}
-              <div className="h-1.5" style={{background:'linear-gradient(90deg,var(--org-primary),var(--org-secondary,var(--org-primary)))'}}/>
-
-              <div className="p-5 flex-1">
-                <div className="flex items-start justify-between gap-2 mb-3">
-                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm text-2xl"
-                    style={{background:'linear-gradient(135deg,var(--org-primary),var(--org-secondary,var(--org-primary)))'}}>
-                    🎯
-                  </div>
-                  <span className={clsx('text-xs font-bold px-2.5 py-1 rounded-full', diffColors[t.difficulty ?? 'Mixed'])}>
-                    {t.difficulty}
-                  </span>
-                </div>
-
-                <h3 className="font-bold text-gray-900 mb-1 leading-tight">{t.title}</h3>
-                {t.description && (
-                  <p className="text-xs text-gray-500 line-clamp-2 mb-3">{t.description}</p>
-                )}
-
-                <div className="grid grid-cols-3 gap-2 mb-4">
-                  {[
-                    { label: 'Questions', value: t.totalQuestions },
-                    { label: 'Time',      value: `${t.timeLimitMins}m` },
-                    { label: 'Pass',      value: `${t.passMarkPercent}%` },
-                  ].map(s => (
-                    <div key={s.label} className="bg-gray-50 rounded-xl p-2 text-center border border-gray-100">
-                      <p className="font-black text-gray-900 text-sm">{s.value}</p>
-                      <p className="text-xs text-gray-400">{s.label}</p>
-                    </div>
-                  ))}
-                </div>
-
-                {isAdmin && (
-                  <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-3">
-                    <Users className="w-3 h-3"/>
-                    {t.attemptCount ?? 0} attempts
-                    <span className={clsx('ml-auto px-2 py-0.5 rounded-full text-xs font-bold',
+        <div className="space-y-3">
+          {(tests as any[]).map((t: any) => (
+            <div key={t.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <h3 className="font-bold text-gray-900">{t.title}</h3>
+                    <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full',
                       t.status === 'Published' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500')}>
                       {t.status}
                     </span>
+                    <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full', diffColors[t.difficulty] ?? 'bg-gray-100')}>{t.difficulty}</span>
+                    {t.courseTitle && <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full flex items-center gap-1"><BookOpen className="w-3 h-3"/>{t.courseTitle}</span>}
                   </div>
-                )}
-              </div>
-
-              {/* Actions */}
-              <div className="px-5 pb-5 space-y-2">
-                {isAdmin ? (
-                  <>
-                    <button
-                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white hover:opacity-90 transition-all"
-                      style={{background:'linear-gradient(135deg,var(--org-primary),var(--org-secondary,var(--org-primary)))'}}
-                      onClick={() => navigate(`/dashboard/mock-test-editor/${t.id}`)}>
-                      <Pencil className="w-4 h-4"/> Edit & Manage Questions
-                    </button>
-                    {t.status !== 'Published' && (
-                      <button
-                        className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-white bg-green-600 hover:bg-green-700 transition-all"
-                        onClick={() => publishMut.mutate(t.id)} disabled={publishMut.isPending}>
-                        <CheckCircle2 className="w-3.5 h-3.5"/> {publishMut.isPending ? 'Publishing…' : 'Publish — Make Visible to Students'}
-                      </button>
-                    )}
-                    <div className="flex gap-2">
-                      <button
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 transition-all"
-                        onClick={() => navigate(`/dashboard/${t.questionTypes?.includes('Coding') ? 'coding-exam' : 'mock-test'}/${t.id}`)}>
-                        <Eye className="w-3.5 h-3.5"/> Preview
-                      </button>
-                      <button
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold text-red-500 bg-red-50 hover:bg-red-100 border border-red-200 transition-all"
-                        onClick={() => { if(confirm('Delete this test?')) deleteMut.mutate(t.id); }}>
-                        <Trash2 className="w-3.5 h-3.5"/> Delete
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <button
-                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white hover:opacity-90 transition-all"
-                    style={{background:'linear-gradient(135deg,var(--org-primary),var(--org-secondary,var(--org-primary)))'}}
-                    onClick={() => navigate(`/dashboard/${t.questionTypes?.includes('Coding') ? 'coding-exam' : 'mock-test'}/${t.id}`)}>
-                    <Play className="w-4 h-4"/> Start Test
+                  <div className="flex flex-wrap gap-3 text-xs text-gray-400">
+                    <span><Clock className="w-3 h-3 inline mr-0.5"/>{t.timeLimitMins} min</span>
+                    <span><Target className="w-3 h-3 inline mr-0.5"/>{t.passMarkPercent}% pass</span>
+                    <span><CheckCircle2 className="w-3 h-3 inline mr-0.5"/>{t.totalQuestions || 'All'} questions</span>
+                    <span><Users className="w-3 h-3 inline mr-0.5"/>{t.attemptCount ?? 0} attempts</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap shrink-0">
+                  {t.status !== 'Published' && (
+                    <button className="btn-secondary text-xs text-green-600" onClick={() => publishMut.mutate(t.id)}>Publish</button>
+                  )}
+                  <button className="btn-ghost p-1.5" title="Edit" onClick={() => navigate(`/dashboard/mock-test-editor/${t.id}`)}><Pencil className="w-4 h-4"/></button>
+                  <button className="btn-secondary text-xs px-2 py-1 text-indigo-600 border-indigo-200"
+                    title="View Student Attempts & Mark Papers"
+                    onClick={() => navigate(`/dashboard/exam-attempts/${t.id}`)}>
+                    👥 Attempts
                   </button>
-                )}
+                  <button className="btn-ghost p-1.5 text-blue-500" title="Preview" onClick={() => startExam(t)}><Eye className="w-4 h-4"/></button>
+                  <button className="btn-ghost p-1.5 text-red-500" title="Delete"
+                    onClick={() => { if (confirm('Delete this assessment?')) deleteMut.mutate(t.id); }}><Trash2 className="w-4 h-4"/></button>
+                </div>
               </div>
             </div>
           ))}

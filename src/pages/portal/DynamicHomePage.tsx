@@ -18,7 +18,7 @@ import { TemplateBold, TemplateMinimal, TemplateDark } from '../../components/po
 
 const API_BASE = typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-  ? '' : 'https://api.worksupport360.com';
+  ? '' : 'https://lms.worksupport360.com';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Org-settings-driven sections — these wrap AROUND the existing template

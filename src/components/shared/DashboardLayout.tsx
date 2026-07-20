@@ -9,22 +9,41 @@ import {
   BarChart3, CreditCard, Layout, Calendar,
   Video, ClipboardList, Target, CheckSquare,
   BarChart2, Briefcase, UserCheck, FileText,
-  ChevronRight, Search, Home
+  ChevronRight, Search, Home, Database, DollarSign
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useOrgStore } from '../../store/orgStore';
 import clsx from 'clsx';
 
 type NavItem = { label: string; to: string; icon: any; badge?: string };
-const adminNav: NavItem[] = [
+
+const superAdminNav: NavItem[] = [
   { label: 'Dashboard',       to: '/dashboard/admin',           icon: LayoutDashboard },
   { label: 'Organizations',   to: '/dashboard/organizations',   icon: Building2 },
   { label: 'Users',           to: '/dashboard/users',           icon: Users },
   { label: 'Courses',         to: '/dashboard/courses',         icon: BookOpen },
   { label: 'Categories',      to: '/dashboard/categories',      icon: FolderTree },
   { label: 'Departments',     to: '/dashboard/departments',     icon: Briefcase },
-  { label: 'Assessments',      to: '/dashboard/mock-tests',      icon: ClipboardList },
+  { label: 'Assessments',     to: '/dashboard/mock-tests',      icon: ClipboardList },
   { label: 'Assignments',     to: '/dashboard/assignments',     icon: CheckSquare },
+  { label: 'Training Batches',to: '/dashboard/training-batches',icon: Calendar },
+  { label: 'Analytics',       to: '/dashboard/analytics',       icon: BarChart3 },
+  { label: 'Payments',        to: '/dashboard/payments',        icon: CreditCard },
+  { label: 'Homepage',        to: '/dashboard/homepage-editor', icon: Layout },
+  { label: 'Org Settings',    to: '/dashboard/org-settings',    icon: Settings },
+];
+
+const orgAdminNav: NavItem[] = [
+  { label: 'Dashboard',       to: '/dashboard/admin',           icon: LayoutDashboard },
+  { label: 'Users',           to: '/dashboard/users',           icon: Users },
+  { label: 'Courses',         to: '/dashboard/courses',         icon: BookOpen },
+  { label: 'Categories',      to: '/dashboard/categories',      icon: FolderTree },
+  { label: 'Departments',     to: '/dashboard/departments',     icon: Briefcase },
+  { label: 'Assessments',     to: '/dashboard/mock-tests',      icon: ClipboardList },
+  { label: 'Assignments',     to: '/dashboard/assignments',     icon: CheckSquare },
+  { label: 'Students Report', to: '/dashboard/students-report', icon: BarChart3 },
+  { label: 'Bench Resources', to: '/dashboard/bench-resources', icon: Briefcase },
+  { label: 'Payroll',         to: '/dashboard/payroll',         icon: DollarSign },
   { label: 'Training Batches',to: '/dashboard/training-batches',icon: Calendar },
   { label: 'Analytics',       to: '/dashboard/analytics',       icon: BarChart3 },
   { label: 'Payments',        to: '/dashboard/payments',        icon: CreditCard },
@@ -57,7 +76,7 @@ const studentNav: NavItem[] = [
 ];
 
 const navByRole: Record<string, NavItem[]> = {
-  SuperAdmin: adminNav, OrgAdmin: adminNav,
+  SuperAdmin: superAdminNav, OrgAdmin: orgAdminNav,
   Instructor: instructorNav, Student: studentNav,
 };
 
@@ -241,6 +260,13 @@ export default function DashboardLayout() {
                        text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors">
             <Home className="w-4 h-4"/> Visit Portal
           </button>
+          {(user?.role === 'SuperAdmin' || user?.role === 'OrgAdmin') && (
+            <button onClick={() => navigate('/dashboard/seed')}
+              className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold
+                         text-indigo-500 hover:bg-indigo-50 hover:text-indigo-700 transition-colors mt-1">
+              <Database className="w-4 h-4"/> Seed Database
+            </button>
+          )}
         </div>
       )}
 

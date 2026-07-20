@@ -56,11 +56,11 @@ export default function RegisterPage() {
             </div>
           )}
           <h1 className="text-3xl font-black text-white leading-tight">{org?.name ?? 'Learning Portal'}</h1>
-          <p className="text-white/70 mt-2 text-sm">{org?.tagline ?? 'Start your learning journey today'}</p>
+          <p className="text-white/70 mt-2 text-sm">{org?.tagline ?? ''}</p>
         </div>
 
         <div className="relative space-y-4">
-          {[
+          {/* {[
             { emoji: '🎓', title: 'Expert-led courses', desc: 'Learn from industry professionals' },
             { emoji: '🏆', title: 'Earn certificates',  desc: 'Recognized credentials on completion' },
             { emoji: '🚀', title: 'Learn at your pace', desc: 'Access courses anytime, anywhere' },
@@ -72,7 +72,7 @@ export default function RegisterPage() {
                 <p className="text-white/60 text-xs mt-0.5">{item.desc}</p>
               </div>
             </div>
-          ))}
+          ))} */}
         </div>
 
         <p className="relative text-white/40 text-xs">
@@ -91,7 +91,7 @@ export default function RegisterPage() {
           <div className="mb-8">
             <h2 className="text-3xl font-black text-gray-900">Create account</h2>
             <p className="text-gray-500 mt-2 text-sm">
-              Joining <span className="font-semibold" style={{ color: 'var(--org-primary)' }}>{org?.name ?? 'the portal'}</span> as a student
+              {/* Joining <span className="font-semibold" style={{ color: 'var(--org-primary)' }}>{org?.name ?? 'the portal'}</span> as a student */}
             </p>
           </div>
 

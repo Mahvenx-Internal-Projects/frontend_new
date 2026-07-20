@@ -30,11 +30,13 @@ function ReadinessBadge({ readiness }: { readiness: string }) {
 
 function TopicBar({ topic, score, correct, total }: { topic: string; score: number; correct: number; total: number }) {
   const color = score >= 75 ? '#10b981' : score >= 60 ? '#f59e0b' : '#ef4444';
+  // Cap total at 20 (questions shown per exam) — old DB records may have 220
+  const displayTotal = total > 20 ? 20 : total;
   return (
     <div>
       <div className="flex justify-between items-center mb-1">
         <span className="text-sm font-semibold text-gray-700 capitalize">{topic}</span>
-        <span className="text-sm font-bold" style={{ color }}>{score}% ({correct}/{total})</span>
+        <span className="text-sm font-bold" style={{ color }}>{score}% · {correct}/{displayTotal} correct</span>
       </div>
       <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
         <div className="h-full rounded-full transition-all duration-700"
@@ -113,7 +115,7 @@ export default function MockTestAnalysisPage() {
               <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium ml-auto">Needs Focus</span>
             </h3>
             <div className="space-y-3">
-              {a.weakTopics.map((t: any) => <TopicBar key={t.topic} topic={t.topic} score={t.scorePercent} correct={t.correct} total={t.totalQuestions} />)}
+              {a.weakTopics.map((t: any) => <TopicBar key={t.topic} topic={t.topic} score={t.scorePercent} correct={t.correct} total={t.totalQuestions ?? 20} />)}
             </div>
           </div>
         )}
@@ -126,7 +128,7 @@ export default function MockTestAnalysisPage() {
               <span className="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded-full font-medium ml-auto">Keep it up!</span>
             </h3>
             <div className="space-y-3">
-              {a.strongTopics.map((t: any) => <TopicBar key={t.topic} topic={t.topic} score={t.scorePercent} correct={t.correct} total={t.totalQuestions} />)}
+              {a.strongTopics.map((t: any) => <TopicBar key={t.topic} topic={t.topic} score={t.scorePercent} correct={t.correct} total={t.totalQuestions ?? 20} />)}
             </div>
           </div>
         )}
@@ -155,6 +157,7 @@ export default function MockTestAnalysisPage() {
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-2xl font-black" style={{ color: 'var(--org-primary)' }}>{att.scorePercent}%</p>
+                    <p className="text-xs text-gray-400">{att.marksObtained}/{att.totalMarks} marks</p>
                     <p className="text-xs font-semibold" style={{ color: rc }}>{att.interviewReadiness}</p>
                   </div>
                 </div>

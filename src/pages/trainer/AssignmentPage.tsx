@@ -3,10 +3,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Trash2, Pencil, Send, CheckCircle2, Clock,
   FileText, Upload, Download, MessageSquare, X,
-  ChevronDown, ChevronUp, AlertCircle, Users, RotateCcw
+  ChevronDown, ChevronUp, AlertCircle, Users, RotateCcw, BookOpen
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { assignmentsApi, coursesApi } from '../../services/api';
+import { assignmentsApi, coursesApi, enrollmentsApi } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import clsx from 'clsx';
 
@@ -53,14 +53,31 @@ export default function AssignmentPage() {
     enabled: !!user?.id && isInstructor,
   });
 
+  // Student: fetch enrolled courses
+  const { data: enrollments = [] } = useQuery({
+    queryKey: ['my-enrollments-assignments', user?.id],
+    queryFn: () => enrollmentsApi.getByUser(user!.id).then(r => r.data),
+    enabled: !!user?.id && !isInstructor,
+  });
+
+  const { data: enrolledCourses = [] } = useQuery({
+    queryKey: ['enrolled-courses-for-assignment', (enrollments as any[]).map((e:any) => e.courseId).join(',')],
+    queryFn: async () => {
+      const ids = (enrollments as any[]).map((e: any) => e.courseId);
+      if (!ids.length) return [];
+      return Promise.all(ids.map((id: number) => coursesApi.get(id).then(r => r.data)));
+    },
+    enabled: !isInstructor && (enrollments as any[]).length > 0,
+  });
+
   const { data: assignments = [], isLoading } = useQuery({
-    queryKey: ['assignments', selectedCourse, user?.id],
+    queryKey: ['assignments', selectedCourse, user?.id, isInstructor],
     queryFn: () => selectedCourse
       ? assignmentsApi.getByCourse(selectedCourse).then(r => r.data)
       : isInstructor
         ? assignmentsApi.getByCourse(0).then(r => r.data).catch(() => [])
-        : assignmentsApi.getForStudent(user!.id).then(r => r.data),
-    enabled: !!user,
+        : Promise.resolve([]),  // student must select a course first
+    enabled: !!user && (isInstructor || selectedCourse !== null),
   });
 
   const { data: submissions = [], refetch: refetchSubs } = useQuery({
@@ -178,6 +195,27 @@ export default function AssignmentPage() {
         </div>
       )}
 
+      {/* Course dropdown (student) */}
+      {!isInstructor && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <label className="label flex items-center gap-1.5 mb-2">
+            <BookOpen className="w-3.5 h-3.5 text-indigo-500" /> Select Your Course
+          </label>
+          <select
+            className="input"
+            value={selectedCourse ?? ''}
+            onChange={e => setSelectedCourse(e.target.value ? Number(e.target.value) : null)}>
+            <option value="">— Choose an enrolled course —</option>
+            {(enrolledCourses as any[]).map((c: any) => (
+              <option key={c.id} value={c.id}>{c.title}</option>
+            ))}
+          </select>
+          {(enrolledCourses as any[]).length === 0 && (
+            <p className="text-xs text-gray-400 mt-2">You are not enrolled in any courses yet.</p>
+          )}
+        </div>
+      )}
+
       {/* Create / Edit form */}
       {showForm && (
         <div className="bg-white rounded-2xl border-2 border-[var(--org-primary)]/30 shadow-sm p-6 space-y-4">
@@ -230,7 +268,12 @@ export default function AssignmentPage() {
       )}
 
       {/* Assignment list */}
-      {isLoading ? (
+      {!isInstructor && !selectedCourse ? (
+        <div className="bg-white rounded-2xl border-2 border-dashed border-gray-200 p-16 text-center">
+          <BookOpen className="w-12 h-12 mx-auto mb-3 text-gray-200"/>
+          <p className="font-bold text-gray-400">Select a course above to see its assignments</p>
+        </div>
+      ) : isLoading ? (
         <div className="space-y-3">{[...Array(3)].map((_,i) => <div key={i} className="h-24 bg-gray-100 animate-pulse rounded-2xl"/>)}</div>
       ) : aList.length === 0 ? (
         <div className="bg-white rounded-2xl border-2 border-dashed border-gray-200 p-16 text-center">
