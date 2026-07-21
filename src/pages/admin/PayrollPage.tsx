@@ -130,230 +130,235 @@ function OfferLetterTab({ employees }: { employees: any[] }) {
 
   const addrLines = (form.address || '').split('\n').filter(Boolean);
 
-  // ── Generate the exact HTML matching the Mahvenx PDF ──────────
-  const generateHTML = () => `<!DOCTYPE html>
+  // ── Generate HTML matching exact Mahvenx PDF format ──────────
+  const generateHTML = () => {
+    const fmt2 = (n: any) => {
+      const v = parseFloat(n);
+      return isNaN(v) ? '00.00' : v.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+    };
+    const addrHtml = (form.address || '')
+      .split('\n').filter(Boolean)
+      .map((l: string, i: number, arr: string[]) => l + (i < arr.length - 1 ? ',' : ''))
+      .join('<br/>');
+    const ctcAnnualNum = Number(form.ctc || 0) * 100000;
+    const ctcAnnualFmt = ctcAnnualNum.toLocaleString('en-IN') + '.00';
+    const joinFmt = form.joiningDate
+      ? new Date(form.joiningDate).toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'})
+      : '____________, ____________, ____________';
+    const apprYear = new Date().getFullYear() + 2;
+    const todayFmt = new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'2-digit',year:'numeric'});
+
+    return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
-<title>Offer Letter - ${form.fullName}</title>
+<title>${form.fullName || 'Offer Letter'}</title>
 <style>
+@page{size:A4;margin:18mm 20mm 20mm 20mm;}
 *{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:Arial,sans-serif;font-size:12px;color:#000;background:#fff;}
-.page{width:210mm;min-height:297mm;padding:18mm 20mm 16mm 20mm;position:relative;page-break-after:always;}
-.page:last-child{page-break-after:auto;}
-/* Logo header */
-.logo-hdr{display:flex;align-items:center;margin-bottom:24px;padding-bottom:10px;border-bottom:3px solid #1a237e;}
-.logo-txt{font-size:28px;font-weight:900;color:#1a237e;letter-spacing:-1px;}
-.logo-txt .red{color:#c62828;}
-/* Content */
-p{margin-bottom:10px;line-height:1.65;text-align:justify;}
-.date{margin-bottom:12px;font-weight:bold;}
-.subject{margin-bottom:6px;}
-.address{margin-bottom:18px;line-height:1.85;}
-.dear{margin-bottom:12px;}
-/* Signatures */
-.sig-row{display:flex;justify-content:space-between;margin-top:36px;}
-.sig-block{}
-.sig-line{border-bottom:1px solid #000;width:210px;margin-top:32px;margin-bottom:4px;}
-/* Footer */
-.page-footer{position:absolute;bottom:12mm;left:20mm;right:20mm;border-top:1px solid #999;padding-top:5px;font-size:9px;color:#555;text-align:center;line-height:1.5;}
-/* Annexure styles */
-.annex-hdr{text-align:center;font-weight:bold;font-size:13px;margin:14px 0 4px;}
-.annex-sub{text-align:center;text-decoration:underline;font-weight:bold;font-size:12px;margin-bottom:14px;}
-h3{font-size:12px;font-weight:bold;margin:14px 0 5px;}
-ul,ol{margin-left:20px;margin-bottom:10px;}
-li{margin-bottom:4px;line-height:1.6;}
-/* Salary table */
-table{width:100%;border-collapse:collapse;margin:10px 0;font-size:11px;}
-th{background:#1a237e;color:#fff;padding:7px 9px;text-align:left;}
+body{font-family:Arial,sans-serif;font-size:11pt;color:#000;line-height:1.5;}
+.logo{font-size:22pt;font-weight:900;color:#1a237e;margin-bottom:6pt;}
+.logo .red{color:#c62828;}
+.logo-rule{border:none;border-top:2.5pt solid #1a237e;margin-bottom:14pt;}
+.date-line{font-weight:bold;margin-bottom:10pt;}
+.subject-block{margin-bottom:14pt;}
+.subject-line{font-weight:bold;}
+.address-block{margin-bottom:16pt;font-weight:bold;line-height:1.8;}
+p{margin-bottom:9pt;text-align:justify;}
+p.left{text-align:left;}
+.sig-row{display:flex;justify-content:space-between;margin-top:28pt;}
+.sig-line{border-bottom:1pt solid #000;width:180pt;margin-top:26pt;margin-bottom:3pt;}
+.footer{border-top:0.5pt solid #888;padding-top:5pt;margin-top:16pt;font-size:8pt;color:#444;text-align:center;line-height:1.6;}
+.footer-right{text-align:right;font-size:8pt;color:#444;line-height:1.6;margin-bottom:10pt;}
+.page{page-break-before:always;}
+.annex-title{text-align:center;font-weight:bold;font-size:11pt;margin:8pt 0 2pt;}
+.annex-sub{text-align:center;text-decoration:underline;font-weight:bold;font-size:11pt;margin-bottom:10pt;}
+h3{font-size:11pt;font-weight:bold;margin:9pt 0 3pt;}
+ol,ul{margin-left:18pt;margin-bottom:8pt;}
+li{margin-bottom:3pt;line-height:1.5;}
+table{width:100%;border-collapse:collapse;margin:8pt 0;font-size:10pt;}
+th{background:#1a237e;color:#fff;padding:5pt 7pt;text-align:left;border:0.5pt solid #888;}
 th.r,td.r{text-align:right;}
-td{padding:6px 9px;border:1px solid #bbb;}
-tr.even td{background:#f5f5f5;}
-tr.less-hdr td{background:#e0e0e0;font-weight:bold;padding:4px 9px;}
-tr.net-row td{font-weight:bold;background:#e8f5e9;border-top:2px solid #1a237e;}
-tr.ctc-row td{font-weight:bold;}
-.note-text{font-size:10px;color:#444;margin:4px 0;}
-@media print{
-  body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  .page{page-break-after:always;padding:14mm 18mm;}
-}
+td{padding:4pt 7pt;border:0.5pt solid #bbb;}
+tr.e td{background:#f5f5f5;}
+tr.lh td{background:#e0e0e0;font-weight:bold;padding:2pt 7pt;}
+tr.net td{font-weight:bold;background:#e8f5e9;border-top:1.5pt solid #1a237e;}
+tr.ctc td{font-weight:bold;}
+.note{font-size:9pt;color:#333;margin:2pt 0;}
+@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
 </style></head><body>
 
-<!-- ════ PAGE 1: COVER LETTER ════ -->
-<div class="page">
-  <div class="logo-hdr"><div class="logo-txt">M<span class="red">ahvenx</span></div></div>
+<div class="logo">M<span class="red">ahvenx</span></div>
+<hr class="logo-rule"/>
 
-  <p class="date">${dateStr}</p>
-  <p class="subject"><strong>Subject: Employment Offer with Mahvenx</strong></p>
-  <p class="subject"><strong>${form.fullName || '________________________'}</strong></p>
-
-  <div class="address">
-    <strong>${form.fullName || '________________________'}</strong><br/>
-    ${addrLines.length > 0
-      ? addrLines.map((l: string) => l + ',').join('<br/>')
-      : 'D/o ________________________,<br/>________________________,<br/>________________________.<br/>Pin code: ________________________'}
-  </div>
-
-  <p class="dear"><strong>Dear</strong> <strong>${form.fullName || '________________________'}</strong>,</p>
-
-  <p>We are pleased to welcome you to the Mahvenx family with an offer of employment with us, as a <strong>${form.designation || 'Software Associate'}</strong>, with a start date of ${joinStr}.</p>
-
-  <p>We believe that exceptional talent can produce exceptional results, and we deem you to be one such, with your experience, expertise, attitude, and cultural fit with our team. We will provide you with the right platform for you to grow and accomplish your personal and professional goals. We expect you in turn to bring your intellect, your thought process, out-of-the-box thinking, passion, and ideas to make your career at Mahvenx a huge success.</p>
-
-  <p>Your annual compensation will be INR <strong>${Number(ctcAnnual).toLocaleString('en-IN')}, (${ctcWords} Rupees Only.)</strong> Please refer to Annexure IV for the detailed compensation structure.</p>
-
-  <p><strong>Appraisal:</strong> Your first annual performance appraisal will be effective from September 01, ${apprYear}. For the first year, it will be planned for 12 months based on your joining date. After that, it will be conducted annually in line with company norms and contingent upon your performance.</p>
-
-  <p>Please review Annexures I, II and III that describe Mahvenx's policies, procedures, benefits, and other terms related to your employment. Please note that these policies and terms are subject to amendments and adjustments from time to time.</p>
-
-  <p>We sincerely look forward to having you join us. Please do not hesitate to contact us should you have any questions.</p>
-
-  <p>Thank you.<br/>Sincerely,</p>
-
-  <div class="sig-row">
-    <div class="sig-block"><div class="sig-line"></div><strong>Divya Madicharla</strong><br/>HR</div>
-    <div class="sig-block"><div class="sig-line"></div><strong>Employee Signature &amp; Date of Acceptance</strong></div>
-  </div>
-
-  <div class="page-footer">
-    Mahvenx It Solutions Pvt Ltd, 1st Floor, B Block, Kanaka Durga Mansion Plot No 52, 53, 5th Phase<br/>
-    KPHB Colony, Hyderabad - 500 072 &nbsp;&nbsp;|&nbsp;&nbsp; Website: www.Mahvenx.com &nbsp;;&nbsp; Email: hr@Mahvenx.com
-  </div>
+<p class="left date-line">${todayFmt}</p>
+<div class="subject-block">
+  <p class="left subject-line">Subject: Employment Offer with Mahvenx</p>
+  <p class="left subject-line">${form.fullName || '________________________'}</p>
 </div>
 
-<!-- ════ PAGE 2: ANNEXURE I ════ -->
-<div class="page">
-  <div class="logo-hdr"><div class="logo-txt">M<span class="red">ahvenx</span></div></div>
-  <div class="annex-hdr">Annexure – I</div>
-  <div class="annex-sub">Mahvenx Terms and General Legal Terms</div>
-  <h3>Place of Work:</h3>
-  <p>Your place of work will be Mahvenx It Solutions Pvt Ltd, plot no 52,53, 1st B Block, Kanaka Durga Mansion, 5th Phase Kukatpally Colony Hyderabad, Telangana 500081, India.</p>
-  <h3>Timings:</h3>
-  <p>Your working hours will be from 9:30 AM to 6:30 PM IST, Monday through Saturday, except holidays. If there is any change in working hours, it will be intimated to you by your Reporting Authority.</p>
-  <h3>Probation &amp; Confirmation:</h3>
-  <p>You will be on probation for a period of Three (3) months. On completion of your probationary period and based on your performance outcome, the management may at its sole discretion confirm your services or extend the period of probation as deemed fit.</p>
-  <h3>Background Checks:</h3>
-  <p>Mahvenx, at its discretion will conduct background checks prior to or after your joining date, to validate your identity, address, education, work experience and criminal checks by a third party. You will explicitly declare consent to the company conducting such background checks. In this connection, you are required to furnish the documents listed in Annexure IV.</p>
-  <h3>POSH (Prevention of Sexual Harassment):</h3>
-  <p>Mahvenx does not tolerate any form of abuse, verbal, or physical behavior, which is unsolicited and unwelcome and interferes with an individual's work performance by creating intimidating / insecure working environment will come under this act. Such conduct constitutes an offence under the law. Mahvenx has constituted an "Internal Complaints Committee" for receiving and for time bound redressal of complaints.</p>
-  <h3>Non-disclosure Agreement:</h3>
-  <p>You will be responsible to ensure that any information pertaining to Mahvenx shall remain confidential and safeguarded. You will be solely responsible to ensure that any information, data, source code and other confidential documentation that are confidential and proprietary in nature will not be provided or disclosed to any third party.</p>
-  <h3>Non-compete Agreement:</h3>
-  <p>On separation from Mahvenx, you will not approach / work with any of the Mahvenx clients / partners either as an individual or as part of another organization directly / indirectly for a period of one year from date of relieving without prior written consent from Mahvenx. In case of violation of the non-compete, Mahvenx will have the option to pursue legal recourse against you.</p>
-  <h3>False Information:</h3>
-  <p>In case information furnished by you either in your application for employment or during the selection process or after joining duty is found to be incorrect/false, and/or it is found that you have suppressed any material information in respect to your qualification and past experiences, the company reserves the right to terminate your services anytime without notice or compensation in lieu thereof.</p>
-  <h3>Notice Period:</h3>
-  <p>We respect the individual's choice to change organizations. Towards this end, we assure you that we will endeavor to make your transition and separation a harmonious process. However, for the purpose of smooth business continuity, we expect you to follow the terms below:</p>
-  <ol>
-    <li>During probation period, the employment can be terminated by giving 1 month notice by either party.</li>
-    <li>After probation confirmation, termination of employment by either party shall be with 2 months' notice in writing. Unused leaves cannot be used for adjusting the notice period.</li>
-    <li>No leaves will be allowed during the notice period and any unavoidable leaves will be Leave without Pay or extension of your employment with Mahvenx at the discretion of your Reporting Authority.</li>
-  </ol>
-  <h3>Termination:</h3>
-  <p>The company may terminate your employment with / without notice period or payment in lieu thereof, on the following grounds:</p>
-  <ol>
-    <li>Breach of the terms and conditions mentioned in this agreement</li>
-    <li>Based on poor performance and repeated negative feedback from client</li>
-    <li>Being found guilty of serious misconduct like misappropriation, dereliction of duty in discharging your duties and functions</li>
-    <li>Absence without approval for 5 contiguous working days</li>
-    <li>Involved in the harassment of co-workers / associates in the work premises</li>
-    <li>Being convicted of any criminal offence</li>
-    <li>Mental or physical incapacity to discharge your functions</li>
-    <li>Committing any material act of dishonesty detrimental to the interests of the Company</li>
-  </ol>
-  <div class="page-footer">
-    Mahvenx It Solutions Pvt Ltd, 1st Floor, B Block, Kanaka Durga Mansion Plot No 52, 53, 5th Phase<br/>
-    KPHB Colony, Hyderabad - 500 072 &nbsp;&nbsp;|&nbsp;&nbsp; Website: www.Mahvenx.com &nbsp;;&nbsp; Email: hr@Mahvenx.com
-  </div>
+<div class="address-block">
+  ${form.fullName || '________________________'}<br/>
+  ${addrHtml || 'D/o ________________________,<br/>________________________,<br/>________________________.<br/>Pin code: ________________________'}
 </div>
 
-<!-- ════ PAGE 3: ANNEXURE II ════ -->
-<div class="page">
-  <div class="logo-hdr"><div class="logo-txt">M<span class="red">ahvenx</span></div></div>
-  <div class="annex-hdr">Annexure – II</div>
-  <div class="annex-sub">Mahvenx Policies and Benefits</div>
-  <h3>Leaves:</h3>
-  <p>Mahvenx follows calendar year for Leaves.</p>
-  <ol>
-    <li><strong>Sick Leave or Casual Leave:</strong> Employees are entitled for 6 days of Sick Leaves (SL) and 6 days of Casual Leaves (CL) per annum. Unutilized SL or CL will lapse at the year-end i.e., on 31st December.</li>
-    <li><strong>Marriage Leave:</strong> Upon completion of probation period, employees will be entitled for one week (five working days) paid holidays for getting married.</li>
-    <li><strong>Maternity Leave:</strong> A female employee is eligible for Maternity leave after working for Mahvenx for 180 contiguous days prior to applying for the maternity leave for up to a maximum of 26 (Twenty-Six) weeks.</li>
-    <li><strong>Paternity Leave:</strong> Upon completion of probation period, a male employee will be eligible for Paternity leave for 5 working days, to be availed within a month of the birth of his child.</li>
-  </ol>
-  <h3>Holidays:</h3>
-  <p>You will be eligible for the holidays as per the company policy. You will receive list of holidays on the day of your joining from HR.</p>
-  <h3>Referral Bonus:</h3>
-  <p>Mahvenx believes great employees know great talent. Mahvenx always encourage employees to refer their known talents to work with us. Mahvenx has a generous referral bonus policy in place. HR will share the details on your day one, and during orientation.</p>
-  <h3>Employee Engagement:</h3>
-  <p>Mahvenx focuses on all round and continuous engagements with all its employees. We organize activities such as annual outings, birthday bashes, festival celebrations, family events, sports tournaments, team lunches.</p>
-  <div class="page-footer">
-    Mahvenx It Solutions Pvt Ltd, 1st Floor, B Block, Kanaka Durga Mansion Plot No 52, 53, 5th Phase<br/>
-    KPHB Colony, Hyderabad - 500 072 &nbsp;&nbsp;|&nbsp;&nbsp; Website: www.Mahvenx.com &nbsp;;&nbsp; Email: hr@Mahvenx.com
-  </div>
+<p class="left"><strong>Dear</strong> <strong>${form.fullName || '________________________'}</strong>,</p>
+
+<p>We are pleased to welcome you to the Mahvenx family with an offer of employment with us, as a <strong>${form.designation || 'Software Associate'}</strong>, with a start date of <strong>${joinFmt}</strong>.</p>
+
+<p>We believe that exceptional talent can produce exceptional results, and we deem you to be one such, with your experience, expertise, attitude, and cultural fit with our team. We will provide you with the right platform for you to grow and accomplish your personal and professional goals. We expect you in turn to bring your intellect, your thought process, out-of-the-box thinking, passion, and ideas to make your career at Mahvenx a huge success.</p>
+
+<p>Your annual compensation will be INR <strong>${ctcAnnualFmt}, (${ctcWords} Rupees Only.)</strong> Please refer to Annexure IV for the detailed compensation structure.</p>
+
+<p><strong>Appraisal:</strong> Your first annual performance appraisal will be effective from September 01, ${apprYear}. For the first year, it will be planned for 12 months based on your joining date. After that, it will be conducted annually in line with company norms and contingent upon your performance.</p>
+
+<p>Please review Annexures I, II and III that describe Mahvenx's policies, procedures, benefits, and other terms related to your employment. Please note that these policies and terms are subject to amendments and adjustments from time to time.</p>
+
+<p>We sincerely look forward to having you join us. Pease do not hesitate to contact us should you have any questions.</p>
+
+<p class="left">Thankyou.<br/>Sincerely,</p>
+
+<div class="sig-row">
+  <div><div class="sig-line"></div><strong>Divya Madicharla</strong><br/>HR</div>
+  <div style="text-align:right;"><div class="sig-line" style="margin-left:auto;"></div><strong>Employee Signature &amp; Date of Acceptance</strong></div>
 </div>
 
-<!-- ════ PAGE 4: ANNEXURE III ════ -->
-<div class="page">
-  <div class="logo-hdr"><div class="logo-txt">M<span class="red">ahvenx</span></div></div>
-  <div class="annex-hdr">ANNEXURE – III</div>
-  <div class="annex-sub">Required Documents</div>
-  <p>At the time of joining, you are requested to bring the following documents for Verification with a photo copy of each.</p>
-  <ol type="a">
-    <li>Certificates supporting your educational qualifications (Schooling, Graduation, Post-Graduation)</li>
-    <li>Your salary slips for the last 3 months or a salary certificate from your previous organization, and Bank statement (for the last 6 months)</li>
-    <li>Relieving letter and / or Service Certificate from your previous organization(s)</li>
-    <li>Form 16 or Taxable Income Statement duly certified by previous employer (Statement showing deductions &amp; Taxable Income with break-up)</li>
-    <li>Three passport sized color photographs</li>
-    <li>Valid Passport, Driving License, PAN Card</li>
-  </ol>
-  <p style="font-size:11px;margin-top:6px;">Please note that PAN number is mandatory to for processing your payroll.</p>
-  <p>Your offer has been made based on the information furnished by you. If there are any discrepancies in the documents / certificates given by you in support of the above information, the Company reserves the right to revoke the offer.</p>
-  <div class="page-footer">
-    Mahvenx It Solutions Pvt Ltd, 1st Floor, B Block, Kanaka Durga Mansion Plot No 52, 53, 5th Phase<br/>
-    KPHB Colony, Hyderabad - 500 072 &nbsp;&nbsp;|&nbsp;&nbsp; Website: www.Mahvenx.com &nbsp;;&nbsp; Email: hr@Mahvenx.com
-  </div>
+<div class="footer">
+  Mahvenx It Solutions Pvt Ltd, 1st Floor, B Block, Kanaka Durga Mansion <br/>
+  Plot No 52, 53, 5th Phase<br/>
+  KPHB Colony, Hyderabad - 500 072<br/>
+  Website: www.Mahvenx.com &nbsp;;&nbsp; Email: hr@Mahvenx.com
 </div>
 
-<!-- ════ PAGE 5: ANNEXURE IV — SALARY ════ -->
+<!-- ANNEXURE I -->
 <div class="page">
-  <div class="logo-hdr"><div class="logo-txt">M<span class="red">ahvenx</span></div></div>
-  <div class="annex-hdr">Annexure – IV</div>
-  <div class="annex-hdr">Salary Structure</div>
-  <div class="annex-hdr">*ANNEXURE – I</div>
-
-  <table>
-    <thead><tr><th style="width:7%">A</th><th>Salary</th><th class="r" style="width:32%">Amount Per Month</th></tr></thead>
-    <tbody>
-      <tr><td>1</td><td>Basic Pay</td><td class="r">${fmt(form.basicSalary)}</td></tr>
-      <tr class="even"><td>2</td><td>House Rent Allowance</td><td class="r">${fmt(form.hra)}</td></tr>
-      <tr><td>3</td><td>Conveyance Allowance (10%)</td><td class="r">${fmt(form.conveyanceAllowance)}</td></tr>
-      <tr class="even"><td>4</td><td>Special Allowance (10%)</td><td class="r">${fmt(form.specialAllowance)}</td></tr>
-      <tr class="less-hdr"><td colspan="3">Less:</td></tr>
-      <tr><td>1</td><td>Profession Tax</td><td class="r">${fmt(form.professionTax)}</td></tr>
-      <tr class="even"><td>2</td><td>**T.D.S (Tax deducted at source)</td><td class="r">${fmt(form.tds)}</td></tr>
-      <tr><td>3</td><td>PF Employee Contribution</td><td class="r">${fmt(form.pfEmployee)}</td></tr>
-      <tr class="even"><td>4</td><td>Others</td><td class="r">${fmt(form.otherDeductions)}</td></tr>
-    </tbody>
-    <tfoot>
-      <tr class="net-row"><td colspan="2"><strong>Net Salary per month</strong></td><td class="r"><strong>${fmt(form.netSalary)}</strong></td></tr>
-      <tr class="ctc-row"><td colspan="2">CTC per month</td><td class="r"><strong>${fmt(form.grossSalary)}</strong></td></tr>
-      <tr class="ctc-row even"><td colspan="2">CTC per annum</td><td class="r"><strong>${Number(ctcAnnual).toLocaleString('en-IN')}</strong></td></tr>
-    </tfoot>
-  </table>
-
-  <p class="note-text"><strong>Note:</strong></p>
-  <p class="note-text">1. ** Income Tax deduction per month is subject to your savings, bills etc.</p>
-  <p class="note-text">2. All the payments paid by the Company are included in calculation of your Income Tax</p>
-
-  <p style="margin-top:24px;">Thank you.<br/>Sincerely,</p>
-  <div style="margin-top:16px;border-bottom:1px solid #000;width:180px;"></div>
-  <p style="margin-top:4px;"><strong>Divya Madicharla</strong><br/>HR</p>
-
-  <div class="page-footer">
-    Mahvenx It Solutions Pvt Ltd, 1st Floor, B Block, Kanaka Durga Mansion Plot No 52, 53, 5th Phase<br/>
-    KPHB Colony, Hyderabad - 500 072 &nbsp;&nbsp;|&nbsp;&nbsp; Website: www.Mahvenx.com &nbsp;;&nbsp; Email: hr@Mahvenx.com
-  </div>
+<div class="logo">M<span class="red">ahvenx</span></div><hr class="logo-rule"/>
+<div class="annex-title">Annexure – I</div>
+<div class="annex-sub">Mahvenx Terms and General Legal Terms</div>
+<h3>Place of Work:</h3>
+<p>Your place of work will be Mahvenx It Solutions Pvt Ltd, plot no 52,53, 1st B Block, Kanaka Durga Mansion, 5th Phase Kukatpally Colony Hyderabad, Telangana 500081, India.</p>
+<h3>Timings:</h3>
+<p>Your working hours will be from 9:30 AM to 6:30 PM IST, Monday through Saturday, except holidays. If there is any change in working hours, it will be intimated to you by your Reporting Authority.</p>
+<h3>Probation &amp; Confirmation:</h3>
+<p>You will be on probation for a period of Four (3) months. On completion of your probationary period and based on your performance outcome, the management may at its sole discretion confirm your services or extend the period of probation as deemed fit.</p>
+<h3>Background Checks:</h3>
+<p>Mahvenx, at its discretion will conduct background checks prior to or after your joining date, to validate your identity, address, education, work experience and criminal checks by a third party. You will explicitly declare consent to the company conducting such background checks. In this connection, you are required to furnish the documents listed in Annexure IV.</p>
+<h3>POSH (Prevention of Sexual Harassment):</h3>
+<p>Mahvenx does not tolerate any form of abuse, verbal, or physical behavior, which is unsolicited and unwelcome and interferes with an individual's work performance by creating intimidating / insecure working environment will come under this act. Such conduct constitutes an offence under the law. Mahvenx has constituted an "Internal Complaints Committee" for receiving and for time bound redressal of complaints.</p>
+<h3>Non-disclosure Agreement:</h3>
+<p>You will be responsible to ensure that any information pertaining to Mahvenx shall remain confidential and safeguarded. You will be solely responsible to ensure that any information, data, source code and other confidential documentation that are confidential and proprietary in nature will not be provided or disclosed to any third party.</p>
+<h3>Non-compete Agreement:</h3>
+<p>On separation from Mahvenx, you will not approach / work with any of the Mahvenx clients / partners either as an individual or as part of another organization directly / indirectly for a period of one year from date of relieving without prior written consent from Mahvenx. In case of violation of the non-compete, Mahvenx will have the option to pursue legal recourse against you.</p>
+<div class="footer">Mahvenx It Solutions Pvt Ltd, 1st Floor, B Block, Kanaka Durga Mansion Plot No 52, 53, 5th Phase<br/>KPHB Colony, Hyderabad - 500 072<br/>Website: www.Mahvenx.com &nbsp;;&nbsp; Email: hr@Mahvenx.com</div>
 </div>
+
+<!-- ANNEXURE I PAGE 2 -->
+<div class="page">
+<div class="logo">M<span class="red">ahvenx</span></div><hr class="logo-rule"/>
+<div class="footer-right">Mahvenx It Solutions Pvt Ltd, 1st Floor, B Block, Kanaka Durga Mansion <br/>Plot No 52, 53, 5th Phase<br/>KPHB Colony, Hyderabad - 500 072<br/>Website: www.Mahvenx.com &nbsp;;&nbsp; Email: hr@Mahvenx.com</div>
+<h3>False Information:</h3>
+<p>In case information furnished by you either in your application for employment or during the selection process or after joining duty is found to be incorrect/false, and/or it is found that you have suppressed any material information in respect to your qualification and past experiences, the company reserves the right to terminate your services anytime without notice or compensation in lieu thereof.</p>
+<h3>Notice Period:</h3>
+<p>We respect the individual's choice to change organizations. Towards this end, we assure you that we will endeavor to make your transition and separation a harmonious process. However, for the purpose of smooth business continuity, we expect you to follow the terms below:</p>
+<ol>
+  <li>During probation period, the employment can be terminated by giving 1 month notice by either party.</li>
+  <li>After probation confirmation, termination of employment by either party shall be with 2 months' notice in writing. Unused leaves cannot be used for adjusting the notice period.</li>
+  <li>No leaves will be allowed during the notice period and any unavoidable leaves will be Leave without Pay or extension of your employment with Mahvenx at the discretion of your Reporting Authority.</li>
+</ol>
+<h3>Termination:</h3>
+<p>The company may terminate your employment with / without notice period or payment in lieu thereof, on the following grounds:</p>
+<ol>
+  <li>Breach of the terms and conditions mentioned in this agreement</li>
+  <li>Based on poor performance and repeated negative feedback from client</li>
+  <li>Being found guilty of serious misconduct like misappropriation, dereliction of duty in discharging your duties and functions</li>
+  <li>Absence without approval for 5 contiguous working days</li>
+  <li>Involved in the harassment of co-workers / associates in the work premises</li>
+  <li>Being convicted of any criminal offence</li>
+  <li>Mental or physical incapacity to discharge your functions</li>
+  <li>Committing any material act of dishonesty detrimental to the interests of the Company</li>
+</ol>
+</div>
+
+<!-- ANNEXURE II -->
+<div class="page">
+<div class="logo">M<span class="red">ahvenx</span></div><hr class="logo-rule"/>
+<div class="footer-right">Mahvenx It Solutions Pvt Ltd, 1st Floor, B Block, Kanaka Durga Mansion <br/>Plot No 52, 53, 5th Phase<br/>KPHB Colony, Hyderabad - 500 072<br/>Website: www.Mahvenx.com &nbsp;;&nbsp; Email: hr@Mahvenx.com</div>
+<div class="annex-title">Annexure – II</div>
+<div class="annex-sub">Mahvenx Policies and Benefits</div>
+<h3>Leaves:</h3>
+<p class="left">Mahvenx follows calendar year for Leaves.</p>
+<ol>
+  <li><strong>Sick Leave or Casual Leave:</strong> Employees are entitled for 6 days of Sick Leaves (SL) and 6 days of Casual Leaves (CL) per annum. Unutilized SL or CL will lapse at the year-end i.e., on 31st December.</li>
+  <li><strong>Marriage Leave:</strong> Upon completion of probation period, employees will be entitled for one week (five working days) paid holidays for getting married.</li>
+  <li><strong>Maternity Leave:</strong> A female employee is eligible for Maternity leave after working for Mahvenx for 180 contiguous days prior to applying for the maternity leave for up to a maximum of 26 (Twenty-Six) weeks.</li>
+  <li><strong>Paternity Leave:</strong> Upon completion of probation period, a male employee will be eligible for Paternity leave for 5 working days, to be availed within a month of the birth of his child.</li>
+</ol>
+<h3>Holidays:</h3>
+<p>You will be eligible for the holidays as per the company policy. You will receive list of holidays on the day of your joining from HR.</p>
+<h3>Referral Bonus:</h3>
+<p>Mahvenx believes great employees know great talent. Mahvenx always encourage employees to refer their known talents to work with us. Mahvenx has a generous referral bonus policy in place. HR will share the details on your day one, and during orientation.</p>
+<h3>Employee Engagement:</h3>
+<p>Mahvenx focuses on all round and continuous engagements with all its employees. We organize activities such as annual outings, birthday bashes, festival celebrations, family events, sports tournaments, team lunches.</p>
+<div class="footer">Mahvenx It Solutions Pvt Ltd, 1st Floor, B Block, Kanaka Durga Mansion Plot No 52, 53, 5th Phase<br/>KPHB Colony, Hyderabad - 500 072<br/>Website: www.Mahvenx.com &nbsp;;&nbsp; Email: hr@Mahvenx.com</div>
+</div>
+
+<!-- ANNEXURE III -->
+<div class="page">
+<div class="logo">M<span class="red">ahvenx</span></div><hr class="logo-rule"/>
+<div class="footer-right">Mahvenx It Solutions Pvt Ltd, 1st Floor, B Block, Kanaka Durga Mansion <br/>Plot No 52, 53, 5th Phase<br/>KPHB Colony, Hyderabad - 500 072<br/>Website: www.Mahvenx.com &nbsp;;&nbsp; Email: hr@Mahvenx.com</div>
+<div class="annex-title">ANNEXURE – III</div>
+<div class="annex-sub">Required Documents</div>
+<p>At the time of joining, you are requested to bring the following documents for Verification with a photo copy of each.</p>
+<ol type="a">
+  <li>Certificates supporting your educational qualifications (Schooling, Graduation, Post-Graduation)</li>
+  <li>Your salary slips for the last 3months or a salary certificate from your previous organization, and Bank statement (for the last 6 months)</li>
+  <li>Relieving letter and / or Service Certificate from your previous organization(s)</li>
+  <li>Form 16 or Taxable Income Statement duly certified by previous employer (Statement showing deductions &amp; Taxable Income with break-up)</li>
+  <li>Three passport sized color photographs</li>
+  <li>Valid Passport, Driving License, PAN Card</li>
+</ol>
+<p class="note">Please note that PAN number is mandatory to for processing your payroll.</p>
+<p>Your offer has been made based on the information furnished by you. If there are any discrepancies in the documents / certificates given by you in support of the above information, the Company reserves the right to revoke the offer.</p>
+<div class="footer">Mahvenx It Solutions Pvt Ltd, 1st Floor, B Block, Kanaka Durga Mansion Plot No 52, 53, 5th Phase<br/>KPHB Colony, Hyderabad - 500 072<br/>Website: www.Mahvenx.com &nbsp;;&nbsp; Email: hr@Mahvenx.com</div>
+</div>
+
+<!-- ANNEXURE IV SALARY -->
+<div class="page">
+<div class="logo">M<span class="red">ahvenx</span></div><hr class="logo-rule"/>
+<div class="footer-right">Mahvenx It Solutions Pvt Ltd, 1st Floor, B Block, Kanaka Durga Mansion <br/>Plot No 52, 53, 5th Phase<br/>KPHB Colony, Hyderabad - 500 072<br/>Website: www.Mahvenx.com &nbsp;;&nbsp; Email: hr@Mahvenx.com</div>
+<div class="annex-title">Annexure – IV</div>
+<div class="annex-title">Salary Structure</div>
+<div class="annex-title">*ANNEXURE – I</div>
+<table>
+  <thead><tr><th style="width:8%">A</th><th>Salary</th><th class="r" style="width:32%">Amount Per Month</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Basic Pay</td><td class="r">${fmt2(form.basicSalary)}</td></tr>
+    <tr class="e"><td>2</td><td>House Rent Allowance</td><td class="r">${fmt2(form.hra)}</td></tr>
+    <tr><td>3</td><td>Conveyance Allowance (10%)</td><td class="r">${fmt2(form.conveyanceAllowance)}</td></tr>
+    <tr class="e"><td>4</td><td>Special Allowance (10%)</td><td class="r">${fmt2(form.specialAllowance)}</td></tr>
+    <tr><td colspan="3">&nbsp;</td></tr>
+    <tr class="lh"><td colspan="3">Less:</td></tr>
+    <tr><td>1</td><td>Profession Tax</td><td class="r">${fmt2(form.professionTax)}</td></tr>
+    <tr class="e"><td>2</td><td>**T.D.S (Tax deducted at source)</td><td class="r">${fmt2(form.tds)}</td></tr>
+    <tr><td>3</td><td>PF Employee Contribution</td><td class="r">${fmt2(form.pfEmployee)}</td></tr>
+    <tr class="e"><td>4</td><td>Others</td><td class="r">${fmt2(form.otherDeductions)}</td></tr>
+  </tbody>
+  <tfoot>
+    <tr class="net"><td colspan="2"><strong>Net Salary per month</strong></td><td class="r"><strong>${fmt2(form.netSalary)}</strong></td></tr>
+    <tr class="ctc"><td colspan="2">CTC per month</td><td class="r"><strong>${fmt2(form.grossSalary)}</strong></td></tr>
+    <tr class="ctc e"><td colspan="2">CTC per annum</td><td class="r"><strong>${ctcAnnualFmt}</strong></td></tr>
+  </tfoot>
+</table>
+<p class="note"><strong>Note:</strong></p>
+<p class="note">1. ** Income Tax deduction per month is subject to your savings, bills etc.</p>
+<p class="note">2. All the payments paid by the Company are included in calculation of your Income Tax</p>
+<br/><br/>
+<p class="left">Thank you.<br/>Sincerely,</p>
+<div style="border-bottom:1pt solid #000;width:150pt;margin-top:18pt;margin-bottom:3pt;"></div>
+<p class="left"><strong>Divya Madicharla</strong><br/>HR</p>
+<div class="footer">Mahvenx It Solutions Pvt Ltd, 1st Floor, B Block, Kanaka Durga Mansion Plot No 52, 53, 5th Phase<br/>KPHB Colony, Hyderabad - 500 072<br/>Website: www.Mahvenx.com &nbsp;;&nbsp; Email: hr@Mahvenx.com</div>
+</div>
+
 </body></html>`;
-
+  }
   const downloadLetter = () => {
     if (!form.fullName) { toast.error('Please fill employee name'); return; }
     const html = generateHTML();
@@ -449,14 +454,14 @@ tr.ctc-row td{font-weight:bold;}
               <div className="sm:col-span-2">
                 <label className={lbl}>Full Name *</label>
                 <input className={clsx(inp,'text-base font-bold')} value={form.fullName}
-                  onChange={e=>set('fullName',e.target.value)} placeholder="Madicharla Someswara Rao"/>
+                  onChange={e=>set('fullName',e.target.value)} placeholder="Employee Full Name"/>
               </div>
               <div className="sm:col-span-2">
                 <label className={lbl}>Address * <span className="text-gray-400 font-normal normal-case">(each line becomes a separate line in letter)</span></label>
                 <textarea className="input w-full text-sm min-h-[80px] resize-none"
                   value={form.address}
                   onChange={e=>set('address',e.target.value)}
-                  placeholder="D/o Madicharla Srinivasa  Rao, 1-89 Middle Street, Pedamallam, Achanta mandalam. Pin code: 534269"/>
+                  placeholder="D/o Parent Name, Door No, Street, Village, District. Pin code: 000000"/>
               </div>
               <div>
                 <label className={lbl}>Designation *</label>
@@ -564,7 +569,67 @@ function PayslipModal({ record, onClose }: { record: any; onClose: () => void })
           <button
             className="btn-primary flex-1 justify-center"
             onClick={() => {
-              const html = generatePayslip(record, month, year);
+              // Build simple payslip HTML
+            const fmt2 = (n: any) => n ? Number(n).toLocaleString('en-IN', {minimumFractionDigits:2}) : '00.00';
+            const daysInMonth = new Date(year, MONTHS.indexOf(month) + 1, 0).getDate();
+            const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><style>
+@page{size:A4;margin:15mm 18mm;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:Arial,sans-serif;font-size:11pt;color:#000;}
+.logo{font-size:20pt;font-weight:900;color:#1a237e;}.logo .red{color:#c62828;}
+.rule{border:none;border-top:2pt solid #1a237e;margin:6pt 0 12pt;}
+.title{text-align:center;font-weight:bold;font-size:13pt;margin:8pt 0;}
+.info{display:grid;grid-template-columns:1fr 1fr;gap:4pt;margin:10pt 0;}
+.row{display:flex;gap:8pt;padding:3pt 0;border-bottom:1pt dotted #ddd;font-size:10pt;}
+.lbl{color:#555;min-width:120pt;}.val{font-weight:600;}
+table{width:100%;border-collapse:collapse;margin:10pt 0;font-size:10pt;}
+th{background:#1a237e;color:#fff;padding:6pt 8pt;text-align:left;border:0.5pt solid #888;}
+th.r,td.r{text-align:right;}
+td{padding:5pt 8pt;border:0.5pt solid #bbb;}
+tr.e td{background:#f5f5f5;}
+tr.net td{font-weight:bold;background:#1a237e;color:#fff;font-size:12pt;}
+.sig{display:flex;justify-content:space-between;margin-top:28pt;}
+.sig-line{border-bottom:1pt solid #000;width:160pt;margin-top:24pt;margin-bottom:3pt;}
+.footer{border-top:0.5pt solid #888;padding-top:4pt;margin-top:12pt;font-size:8pt;color:#555;text-align:center;}
+@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
+</style></head><body>
+<div class="logo">M<span class="red">ahvenx</span></div><hr class="rule"/>
+<div class="title">SALARY SLIP — ${month.toUpperCase()} ${year}</div>
+<div class="info">
+  <div>
+    <div class="row"><span class="lbl">Employee Name</span><span class="val">${record.fullName}</span></div>
+    <div class="row"><span class="lbl">Designation</span><span class="val">${record.designation||'—'}</span></div>
+    <div class="row"><span class="lbl">Department</span><span class="val">${record.department||'—'}</span></div>
+    <div class="row"><span class="lbl">Date of Joining</span><span class="val">${record.joiningDate?.split('T')[0]||record.payrollFromDate?.split('T')[0]||'—'}</span></div>
+    <div class="row"><span class="lbl">PAN Number</span><span class="val">${record.panCard||'—'}</span></div>
+  </div>
+  <div>
+    <div class="row"><span class="lbl">Pay Period</span><span class="val">01–${daysInMonth} ${month} ${year}</span></div>
+    <div class="row"><span class="lbl">Bank Name</span><span class="val">${record.bankName||'—'}</span></div>
+    <div class="row"><span class="lbl">Account No.</span><span class="val">${record.accountNumber?'****'+record.accountNumber.slice(-4):'—'}</span></div>
+    <div class="row"><span class="lbl">IFSC Code</span><span class="val">${record.ifscCode||'—'}</span></div>
+    <div class="row"><span class="lbl">PF Number</span><span class="val">${record.pfNumber||'—'}</span></div>
+  </div>
+</div>
+<table>
+  <thead><tr><th>Earnings</th><th class="r">Amount (₹)</th><th>Deductions</th><th class="r">Amount (₹)</th></tr></thead>
+  <tbody>
+    <tr><td>Basic Pay</td><td class="r">${fmt2(record.basicSalary)}</td><td>PF Employee (12%)</td><td class="r">${fmt2(record.pfEmployee)}</td></tr>
+    <tr class="e"><td>House Rent Allowance</td><td class="r">${fmt2(record.hra)}</td><td>TDS</td><td class="r">${fmt2(record.tds)}</td></tr>
+    <tr><td>Conveyance Allowance</td><td class="r">${fmt2(record.conveyanceAllowance)}</td><td>Profession Tax</td><td class="r">${fmt2(record.professionTax)}</td></tr>
+    <tr class="e"><td>Special Allowance</td><td class="r">${fmt2(record.specialAllowance)}</td><td>Others</td><td class="r">${fmt2(record.otherDeductions)}</td></tr>
+    <tr><td><strong>Gross Salary</strong></td><td class="r"><strong>${fmt2(record.grossSalary)}</strong></td><td><strong>Total Deductions</strong></td><td class="r"><strong>${fmt2(record.totalDeductions)}</strong></td></tr>
+    <tr class="net"><td colspan="3"><strong>NET SALARY</strong></td><td class="r"><strong>₹ ${fmt2(record.netSalary)}</strong></td></tr>
+  </tbody>
+</table>
+<p style="font-size:9pt;color:#555;margin:4pt 0;">Net salary paid via bank transfer to account ****${record.accountNumber?.slice(-4)||'XXXX'}, ${record.bankName||'Bank'}.</p>
+<div class="sig">
+  <div><div class="sig-line"></div><strong>Employee Signature</strong></div>
+  <div><div class="sig-line"></div><strong>HR Signature</strong><br/>Mahvenx IT Solutions</div>
+</div>
+<div class="footer">This is a system-generated salary slip. | Mahvenx It Solutions Pvt Ltd | www.Mahvenx.com | hr@Mahvenx.com</div>
+</body></html>`;
               printHTML(html, `payslip-${record.fullName.replace(/ /g,'-')}-${month}-${year}`);
               toast.success(`Payslip ready for ${month} ${year}`);
             }}>
@@ -682,8 +747,8 @@ function PayrollModal({ record, orgId, onClose }: { record: any; orgId: number; 
           <div>
             <p className={sec}><User className="w-4 h-4 text-indigo-500"/> Personal Details</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <div className="sm:col-span-1"><label className={lbl}>Full Name *</label><input className={inp} value={form.fullName} onChange={e=>set('fullName',e.target.value)} placeholder="Dirisala Kalyan Ram"/></div>
-              <div><label className={lbl}>Email *</label><input className={inp} type="email" value={form.email} onChange={e=>set('email',e.target.value)} placeholder="kalyan@email.com"/></div>
+              <div className="sm:col-span-1"><label className={lbl}>Full Name *</label><input className={inp} value={form.fullName} onChange={e=>set('fullName',e.target.value)} placeholder="Employee Full Name"/></div>
+              <div><label className={lbl}>Email *</label><input className={inp} type="email" value={form.email} onChange={e=>set('email',e.target.value)} placeholder="employee@email.com"/></div>
               <div><label className={lbl}>Phone *</label><input className={inp} value={form.phone} onChange={e=>set('phone',e.target.value)} placeholder="+91 9876543210"/></div>
               <div><label className={lbl}>Designation</label><input className={inp} value={form.designation} onChange={e=>set('designation',e.target.value)} placeholder="Software Associate"/></div>
               <div><label className={lbl}>Department</label><input className={inp} value={form.department} onChange={e=>set('department',e.target.value)} placeholder="Engineering"/></div>
@@ -692,7 +757,7 @@ function PayrollModal({ record, orgId, onClose }: { record: any; orgId: number; 
                   {DOMAINS.filter(d=>d!=='All').map(d=><option key={d}>{d}</option>)}
                 </select>
               </div>
-              <div className="sm:col-span-2"><label className={lbl}>Address</label><input className={inp} value={form.address} onChange={e=>set('address',e.target.value)} placeholder="D/o Pulla Rao, 1-54-1 Pedhavedhi, Pedamallam, Pin: 534269"/></div>
+              <div className="sm:col-span-2"><label className={lbl}>Address</label><input className={inp} value={form.address} onChange={e=>set('address',e.target.value)} placeholder="D/o Parent Name, Door No, Street, City. Pin code: 000000"/></div>
               <div><label className={lbl}>Date of Joining</label><input className={inp} type="date" value={form.joiningDate} onChange={e=>set('joiningDate',e.target.value)}/></div>
             </div>
           </div>
@@ -827,7 +892,7 @@ function PayrollModal({ record, orgId, onClose }: { record: any; orgId: number; 
               <div><label className={lbl}>Bank Name</label><input className={inp} value={form.bankName} onChange={e=>set('bankName',e.target.value)} placeholder="State Bank of India"/></div>
               <div><label className={lbl}>Account Number</label><input className={inp} value={form.accountNumber} onChange={e=>set('accountNumber',e.target.value)} placeholder="12345678901"/></div>
               <div><label className={lbl}>IFSC Code *</label><input className={inp} value={form.ifscCode} onChange={e=>set('ifscCode',e.target.value.toUpperCase())} placeholder="SBIN0001234"/></div>
-              <div><label className={lbl}>Account Holder Name</label><input className={inp} value={form.accountHolderName} onChange={e=>set('accountHolderName',e.target.value)} placeholder="Dirisala Kalyan Ram"/></div>
+              <div><label className={lbl}>Account Holder Name</label><input className={inp} value={form.accountHolderName} onChange={e=>set('accountHolderName',e.target.value)} placeholder="Employee Full Name"/></div>
               <div><label className={lbl}>Bank Branch</label><input className={inp} value={form.bankBranch} onChange={e=>set('bankBranch',e.target.value)} placeholder="Hyderabad Main"/></div>
             </div>
           </div>
@@ -1043,10 +1108,7 @@ export default function PayrollPage() {
                       onClick={()=>setPayslipFor(r)}>
                       <FileText className="w-4 h-4"/>
                     </button>
-                    <button className="p-1.5 hover:bg-indigo-50 rounded-lg text-indigo-500" title="Offer Letter"
-                      onClick={()=>{const h=generateOfferLetter(r);printHTML(h,`offer-${r.fullName}`);toast.success('Offer letter ready!');}}>
-                      <FileText className="w-4 h-4"/>
-                    </button>
+
                     <button className="p-1.5 hover:bg-blue-50 rounded-lg text-blue-400" title="Edit"
                       onClick={()=>{setEditing(r);setShowForm(true);}}>
                       <Pencil className="w-4 h-4"/>
@@ -1058,8 +1120,7 @@ export default function PayrollPage() {
                   </div>
                   <div className="flex gap-1 mt-0.5">
                     <span className="text-xs text-green-600 cursor-pointer" onClick={()=>setPayslipFor(r)}>📄 Payslip</span>
-                    <span className="text-xs text-gray-300">|</span>
-                    <span className="text-xs text-indigo-600 cursor-pointer" onClick={()=>{const h=generateOfferLetter(r);printHTML(h,`offer-${r.fullName}`);}}>📋 Offer</span>
+
                   </div>
                 </td>
               </tr>
