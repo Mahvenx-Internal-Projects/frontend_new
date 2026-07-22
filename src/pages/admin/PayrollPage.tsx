@@ -5,8 +5,10 @@ import {
   Phone, Mail, Download, Eye, User, Shield, Banknote,
   FileText, Printer, Calendar
 } from 'lucide-react';
+import { uploadApi } from "../../services/api";
 import toast from 'react-hot-toast';
 import api from '../../services/api';
+import { UploadCloud } from "lucide-react";
 import { useAuthStore } from '../../store/authStore';
 import clsx from 'clsx';
 
@@ -61,7 +63,23 @@ function printHTML(html: string, filename: string) {
   w.focus();
   setTimeout(() => { w.print(); }, 500);
 }
+function generatePayslip(record: any, month: string, year: number) {
+   return `
+      <!DOCTYPE html>
+      <html>
+      ...
+      </html>
+   `;
+}
 
+function generateOfferLetter(record: any) {
+   return `
+      <!DOCTYPE html>
+      <html>
+      ...
+      </html>
+   `;
+}
 
 // ═══════════════════════════════════════════════════════════════
 // OFFER LETTER TAB
@@ -582,12 +600,11 @@ function PayrollModal({ record, orgId, onClose }: { record: any; orgId: number; 
   const isEdit = !!record?.id;
   const [form, setForm] = useState<any>(isEdit ? {
     ...EMPTY, ...record,
-    ctc: record.ctc ?? '',
-    grossSalary: record.grossSalary ?? '',
-    basicSalary: record.basicSalary ?? '',
-    hra: record.hra ?? '',
-    conveyanceAllowance: record.conveyanceAllowance ?? '',
-    specialAllowance: record.specialAllowance ?? '',
+    ctc: record.annualCTC ?? '',
+basicSalary: record.basicPay ?? '',
+hra: record.hra ?? '',
+conveyanceAllowance: record.conveyanceAllowance ?? '',
+specialAllowance: record.specialAllowance ?? '',
     pfEmployee: record.pfEmployee ?? '',
     pfEmployer: record.pfEmployer ?? '',
     tds: record.tds ?? '200',
@@ -627,43 +644,146 @@ function PayrollModal({ record, orgId, onClose }: { record: any; orgId: number; 
   });
 
   const saveMut = useMutation({
-    mutationFn: () => {
-      const payload = {
-        ...form,
-        ctc: Number(form.ctc),
-        grossSalary: Number(form.grossSalary)||null,
-        basicSalary: Number(form.basicSalary)||null,
-        hra: Number(form.hra)||null,
-        conveyanceAllowance: Number(form.conveyanceAllowance)||null,
-        specialAllowance: Number(form.specialAllowance)||null,
-        pfEmployee: Number(form.pfEmployee)||null,
-        pfEmployer: Number(form.pfEmployer)||null,
-        tds: Number(form.tds)||null,
-        professionTax: Number(form.professionTax)||null,
-        otherDeductions: Number(form.otherDeductions)||null,
-        totalDeductions: Number(form.totalDeductions)||null,
-        netSalary: Number(form.netSalary)||null,
-        gstAmount: Number(form.gstAmount)||null,
-        paymentDay: Number(form.paymentDay)||1,
-        payrollFromDate: new Date(form.payrollFromDate).toISOString(),
-        payrollToDate: form.payrollToDate ? new Date(form.payrollToDate).toISOString() : null,
-        joiningDate: form.joiningDate ? new Date(form.joiningDate).toISOString() : null,
-        organizationId: orgId,
-      };
-      return isEdit ? api.put(`/payroll/${record.id}`, payload) : api.post('/payroll', payload);
-    },
-    onSuccess: () => {
-      toast.success(isEdit ? 'Payroll updated!' : 'Payroll record created!');
-      qc.invalidateQueries({ queryKey: ['payroll'] });
-      onClose();
-    },
-    onError: () => toast.error('Failed to save'),
-  });
+  mutationFn: async () => {
 
+    // -----------------------------
+    // Upload PAN Card
+    // -----------------------------
+    let panCardUrl = "";
+
+    if (panCardFile) {
+      const res = await uploadApi.file(
+        panCardFile,
+        `payroll/pan/${orgId}`
+      );
+
+      panCardUrl = res.data.url;
+    }
+
+    // -----------------------------
+    // Upload Aadhaar Card
+    // -----------------------------
+    let aadhaarCardUrl = "";
+
+    if (aadhaarCardFile) {
+      const res = await uploadApi.file(
+        aadhaarCardFile,
+        `payroll/aadhaar/${orgId}`
+      );
+
+      aadhaarCardUrl = res.data.url;
+    }
+
+    // -----------------------------
+    // Upload Additional Documents
+    // -----------------------------
+    let additionalDocuments = "";
+
+    if (additionalFiles.length > 0) {
+
+      const uploadedUrls: string[] = [];
+
+      for (const file of additionalFiles) {
+
+        const res = await uploadApi.file(
+          file,
+          `payroll/documents/${orgId}`
+        );
+
+        uploadedUrls.push(res.data.url);
+      }
+
+      // Store all URLs as comma-separated string
+      additionalDocuments = uploadedUrls.join(",");
+    }
+
+    // -----------------------------
+    // Payroll Payload
+    // -----------------------------
+    const payload = {
+      organizationId: orgId,
+
+      employeeId: null,
+
+      fullName: form.fullName,
+      email: form.email,
+      phone: form.phone,
+
+      designation: form.designation,
+      department: form.department,
+      domain: form.domain,
+      address: form.address,
+
+      dateOfJoining: form.joiningDate
+        ? new Date(form.joiningDate).toISOString()
+        : null,
+
+      annualCTC: Number(form.ctc) || 0,
+
+      gstApplicable: form.gstApplicable === "Yes",
+
+      basicPay: Number(form.basicSalary) || 0,
+      hra: Number(form.hra) || 0,
+      conveyanceAllowance: Number(form.conveyanceAllowance) || 0,
+      specialAllowance: Number(form.specialAllowance) || 0,
+
+      pfRequired: form.pfRequired === "Yes",
+
+      tds: Number(form.tds) || 0,
+      professionalTax: Number(form.professionTax) || 0,
+      otherDeductions: Number(form.otherDeductions) || 0,
+
+      payrollFromDate: form.payrollFromDate
+        ? new Date(form.payrollFromDate).toISOString()
+        : null,
+
+      payrollToDate: form.payrollToDate
+        ? new Date(form.payrollToDate).toISOString()
+        : null,
+
+      paymentDay: Number(form.paymentDay) || 1,
+
+      status: form.status,
+
+      bankName: form.bankName,
+      accountNumber: form.accountNumber,
+      ifscCode: form.ifscCode,
+      accountHolderName: form.accountHolderName,
+      bankBranch: form.bankBranch,
+
+      panCardNumber: form.panCard,
+      aadhaarCardNumber: form.aadharCard,
+
+      // Cloudflare URLs
+      panCardUrl,
+      aadhaarCardUrl,
+      additionalDocuments,
+
+      notes: form.notes
+    };
+
+    return isEdit
+      ? api.put(`/payroll/${record.id}`, payload)
+      : api.post("/payroll", payload);
+  },
+
+  onSuccess: () => {
+    toast.success(isEdit ? "Payroll updated!" : "Payroll record created!");
+    qc.invalidateQueries({ queryKey: ["payroll"] });
+    onClose();
+  },
+
+  onError: () => {
+    toast.error("Failed to save");
+  }
+});
   const inp = 'input w-full text-sm';
   const lbl = 'block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide';
   const sec = 'font-bold text-gray-800 flex items-center gap-2 mb-3 mt-1 pb-2 border-b border-gray-100 text-sm';
   const calc= (v: any) => v ? `₹${Number(v).toLocaleString('en-IN')}` : '';
+  const [panCardFile, setPanCardFile] = useState<File | null>(null);
+const [aadhaarCardFile, setAadhaarCardFile] = useState<File | null>(null);
+const [additionalFiles, setAdditionalFiles] = useState<File[]>([]);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center p-4 overflow-y-auto">
@@ -833,24 +953,195 @@ function PayrollModal({ record, orgId, onClose }: { record: any; orgId: number; 
           </div>
 
           {/* ── KYC ── */}
-          <div>
-            <p className={sec}><Shield className="w-4 h-4 text-amber-500"/> KYC Documents</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <div>
-                <label className={lbl}>PAN Card * <span className="text-red-500">Mandatory for payroll</span></label>
-                <input className={inp} value={form.panCard} onChange={e=>set('panCard',e.target.value.toUpperCase())} placeholder="ABCDE1234F" maxLength={10}/>
-                <p className="text-xs text-gray-400 mt-0.5">Format: AAAAA9999A</p>
-              </div>
-              <div>
-                <label className={lbl}>Aadhaar Card Number</label>
-                <input className={inp} value={form.aadharCard} onChange={e=>set('aadharCard',e.target.value)} placeholder="1234 5678 9012" maxLength={14}/>
-              </div>
-              <div>
-                <label className={lbl}>Additional Documents</label>
-                <input className={inp} value={form.additionalDocuments} onChange={e=>set('additionalDocuments',e.target.value)} placeholder="Offer Letter, Relieving Letter, PF Form"/>
-              </div>
+         <div>
+  <p className={sec}>
+    <Shield className="w-4 h-4 text-amber-500" />
+    KYC Documents
+  </p>
+
+  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+    {/* ================= PAN CARD ================= */}
+
+    <div>
+
+      <label className={lbl}>
+        PAN Card *
+        <span className="text-red-500"> Mandatory for Payroll</span>
+      </label>
+
+      <input
+        className={inp}
+        value={form.panCard}
+        onChange={e => set("panCard", e.target.value.toUpperCase())}
+        placeholder="ABCDE1234F"
+        maxLength={10}
+      />
+
+      <p className="text-xs text-gray-400 mt-1">
+        Format : AAAAA9999A
+      </p>
+
+      <label
+        htmlFor="panUpload"
+        className="mt-3 flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-blue-300 rounded-xl cursor-pointer bg-gray-50 hover:bg-blue-50 transition"
+      >
+
+        <UploadCloud className="w-9 h-9 text-blue-600 mb-2" />
+
+        <span className="font-semibold text-gray-700">
+          Upload PAN Card
+        </span>
+
+        <span className="text-xs text-gray-500 mt-1">
+          PDF, JPG or PNG (Max 5 MB)
+        </span>
+
+        <input
+          id="panUpload"
+          type="file"
+          className="hidden"
+          accept=".pdf,.jpg,.jpeg,.png"
+          onChange={(e) => {
+            if (e.target.files?.length) {
+              setPanCardFile(e.target.files[0]);
+            }
+          }}
+        />
+
+      </label>
+
+      {panCardFile && (
+        <div className="flex items-center gap-2 mt-2 text-green-600 text-sm">
+          <FileText className="w-4 h-4" />
+          {panCardFile.name}
+        </div>
+      )}
+
+    </div>
+
+
+
+    {/* ================= AADHAAR ================= */}
+
+    <div>
+
+      <label className={lbl}>
+        Aadhaar Card Number
+      </label>
+
+      <input
+        className={inp}
+        value={form.aadharCard}
+        onChange={e => set("aadharCard", e.target.value)}
+        placeholder="1234 5678 9012"
+        maxLength={14}
+      />
+
+      <label
+        htmlFor="aadhaarUpload"
+        className="mt-7 flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-blue-300 rounded-xl cursor-pointer bg-gray-50 hover:bg-blue-50 transition"
+      >
+
+        <UploadCloud className="w-9 h-9 text-blue-600 mb-2" />
+
+        <span className="font-semibold text-gray-700">
+          Upload Aadhaar Card
+        </span>
+
+        <span className="text-xs text-gray-500 mt-1">
+          PDF, JPG or PNG (Max 5 MB)
+        </span>
+
+        <input
+          id="aadhaarUpload"
+          type="file"
+          className="hidden"
+          accept=".pdf,.jpg,.jpeg,.png"
+          onChange={(e) => {
+            if (e.target.files?.length) {
+              setAadhaarCardFile(e.target.files[0]);
+            }
+          }}
+        />
+
+      </label>
+
+      {aadhaarCardFile && (
+        <div className="flex items-center gap-2 mt-2 text-green-600 text-sm">
+          <FileText className="w-4 h-4" />
+          {aadhaarCardFile.name}
+        </div>
+      )}
+
+    </div>
+
+
+
+    {/* ================= ADDITIONAL DOCUMENTS ================= */}
+
+    <div>
+
+      <label className={lbl}>
+        Additional Documents
+      </label>
+
+      <input
+        className={inp}
+        value={form.additionalDocuments}
+        onChange={e => set("additionalDocuments", e.target.value)}
+        placeholder="Offer Letter, Relieving Letter"
+      />
+
+      <label
+        htmlFor="documentsUpload"
+        className="mt-7 flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-blue-300 rounded-xl cursor-pointer bg-gray-50 hover:bg-blue-50 transition"
+      >
+
+        <UploadCloud className="w-9 h-9 text-blue-600 mb-2" />
+
+        <span className="font-semibold text-gray-700">
+          Upload Documents
+        </span>
+
+        <span className="text-xs text-gray-500 mt-1">
+          PDF, JPG, PNG, DOC, DOCX
+        </span>
+
+        <input
+          id="documentsUpload"
+          type="file"
+          multiple
+          className="hidden"
+          accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+          onChange={(e) => {
+            if (e.target.files) {
+              setAdditionalFiles(Array.from(e.target.files));
+            }
+          }}
+        />
+
+      </label>
+
+      {additionalFiles.length > 0 && (
+        <div className="mt-2 space-y-1">
+          {additionalFiles.map((file, index) => (
+            <div
+              key={index}
+              className="flex items-center gap-2 text-green-600 text-sm"
+            >
+              <FileText className="w-4 h-4" />
+              {file.name}
             </div>
-          </div>
+          ))}
+        </div>
+      )}
+
+    </div>
+
+  </div>
+
+</div>
 
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Notes</label>
@@ -903,12 +1194,14 @@ export default function PayrollPage() {
     onError:   () => toast.error('Delete failed'),
   });
 
-  const list = records as any[];
+ const list = records?.items ?? [];
   const fmt  = (n: any) => n ? `₹${Number(n).toLocaleString('en-IN')}` : '—';
 
   const exportCSV = () => {
     const h = 'Name,Email,Phone,Designation,Domain,CTC(LPA),Gross/mo,Net/mo,PF,TDS,GST,FromDate,PAN,IFSC,Bank,Status\n';
-    const r = list.map(r => `"${r.fullName}","${r.email}","${r.phone}","${r.designation??''}","${r.domain??''}","${r.ctc}","${r.grossSalary??''}","${r.netSalary??''}","${r.pfRequired}","${r.tds??''}","${r.gstAmount??''}","${r.payrollFromDate?.split('T')[0]??''}","${r.panCard??''}","${r.ifscCode??''}","${r.bankName??''}","${r.status}"`).join('\n');
+    const r = list.map((r: any) => `"${r.fullName}","${r.email}","${r.phone}","${r.designation??''}","${r.domain??''}","${r.ctc}","${r.grossSalary??''}","${r.netSalary??''}","${r.pfRequired
+    ? fmt(r.basicPay * 0.12)
+    : '₹0'}","${r.tds??''}","${r.gstAmount??''}","${r.payrollFromDate?.split('T')[0]??''}","${r.panCard??''}","${r.ifscCode??''}","${r.bankName??''}","${r.status}"`).join('\n');
     const b = new Blob([h+r], {type:'text/csv'});
     const a = document.createElement('a'); a.href=URL.createObjectURL(b); a.download='payroll.csv'; a.click();
   };
@@ -1018,19 +1311,31 @@ export default function PayrollPage() {
                   </div>
                 </td>
                 <td className="py-3 px-3"><span className="text-xs bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded-full">{r.domain}</span></td>
-                <td className="py-3 px-3 font-black text-purple-700">₹{r.ctc}L</td>
-                <td className="py-3 px-3 text-gray-700">{fmt(r.basicSalary)}</td>
+                <td className="py-3 px-3 font-black text-purple-700">₹{r.annualCTC.toLocaleString('en-IN')}</td>
+                <td className="py-3 px-3 text-gray-700">{fmt(r.basicPay)}</td>
                 <td className="py-3 px-3 text-gray-700">{fmt(r.hra)}</td>
                 <td className="py-3 px-3">
                   <span className={clsx('text-xs font-bold px-1.5 py-0.5 rounded',
                     r.pfRequired==='Yes'?'bg-blue-100 text-blue-700':'text-gray-400')}>
-                    {r.pfRequired==='Yes'?`✅ ${fmt(r.pfEmployee)}`:'No PF'}
+                    {r.pfRequired==='Yes'?`✅ ${fmt(r.pfRequired ? "Yes" : "No")}`:'No PF'}
                   </span>
                 </td>
                 <td className="py-3 px-3 text-gray-700">{fmt(r.tds)}</td>
-                <td className="py-3 px-3 text-red-600 font-bold">- {fmt(r.totalDeductions)}</td>
-                <td className="py-3 px-3"><span className="font-black text-green-700 text-base">{fmt(r.netSalary)}</span></td>
-                <td className="py-3 px-3 font-mono text-xs text-gray-700">{r.panCard||'—'}</td>
+                <td className="py-3 px-3 text-red-600 font-bold">- {fmt(
+    (r.tds || 0) +
+    (r.professionalTax || 0) +
+    (r.otherDeductions || 0)
+)}</td>
+                <td className="py-3 px-3"><span className="font-black text-green-700 text-base">{fmt(
+    r.basicPay +
+    r.hra +
+    r.conveyanceAllowance +
+    r.specialAllowance -
+    r.tds -
+    r.professionalTax -
+    r.otherDeductions
+)}</span></td>
+                <td className="py-3 px-3 font-mono text-xs text-gray-700">{r.panCardNumber||'—'}</td>
                 <td className="py-3 px-3">
                   <span className={clsx('text-xs font-bold px-2 py-0.5 rounded-full',
                     r.status==='Active'?'bg-green-100 text-green-700':r.status==='OnHold'?'bg-amber-100 text-amber-700':'bg-gray-100 text-gray-500')}>

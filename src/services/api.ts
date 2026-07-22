@@ -157,6 +157,22 @@ export const departmentsApi = {
   assignUsers: (id: number, userIds: number[]) => api.post(`/departments/${id}/users`, userIds),
   removeUser: (deptId: number, userId: number) => api.delete(`/departments/${deptId}/users/${userId}`),
 };
+export const payrollApi = {
+  getAll: (params?: object) =>
+    api.get('/payroll', { params }),
+
+  get: (id: number) =>
+    api.get(`/payroll/${id}`),
+
+  create: (data: object) =>
+    api.post('/payroll', data),
+
+  update: (id: number, data: object) =>
+    api.put(`/payroll/${id}`, data),
+
+  delete: (id: number) =>
+    api.delete(`/payroll/${id}`),
+};
 
 // ─── Homepage Config ──────────────────────────────────────────
 export const homePageApi = {
