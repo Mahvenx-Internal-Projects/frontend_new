@@ -41,10 +41,42 @@ export default api;
 
 // ─── Auth ─────────────────────────────────────────────────────
 export const authApi = {
-  login:         (email: string, password: string) => api.post('/auth/login', { email, password }),
-  register:      (d: object) => api.post('/auth/register', d),
-  me:            ()          => api.get('/auth/me'),
-  organizations: ()          => api.get('/auth/organizations'),
+  login: (email: string, password: string) =>
+    api.post("/auth/login", { email, password }),
+
+  register: (d: object) =>
+    api.post("/auth/register", d),
+
+  me: () =>
+    api.get("/auth/me"),
+
+  organizations: () =>
+    api.get("/auth/organizations"),
+
+  // Forgot Password
+  forgotPassword: (email: string) =>
+    api.post("/auth/forgot-password", {
+      email,
+    }),
+
+  // Verify OTP
+  verifyOtp: (email: string, otp: string) =>
+    api.post("/auth/verify-otp", {
+      email,
+      otp,
+    }),
+
+  // Reset Password
+  resetPassword: (
+    email: string,
+    otp: string,
+    newPassword: string
+  ) =>
+    api.post("/auth/reset-password", {
+      email,
+      otp,
+      newPassword,
+    }),
 };
 
 // ─── Organizations ────────────────────────────────────────────
