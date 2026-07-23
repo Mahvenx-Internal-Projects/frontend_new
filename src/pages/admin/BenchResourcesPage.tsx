@@ -41,13 +41,41 @@ function ResourceModal({ resource, orgId, onClose }: { resource: any; orgId: num
     currentCTC: resource.currentCTC ?? '',
     expectedCTC: resource.expectedCTC ?? '',
   } : EMPTY);
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
+const [resumeUrl, setResumeUrl] = useState('');
+const [uploadingResume, setUploadingResume] = useState(false);
 
   const set = (k: string, v: any) => setForm((p: any) => ({ ...p, [k]: v }));
+const uploadResume = async (file: File) => {
+  try {
+    setUploadingResume(true);
 
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const res = await api.post(
+      "/upload/file?folder=resume",
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      }
+    );
+
+    setResumeUrl(res.data.url);
+    toast.success("Resume uploaded successfully");
+  } catch {
+    toast.error("Resume upload failed");
+  } finally {
+    setUploadingResume(false);
+  }
+};
   const saveMut = useMutation({
     mutationFn: () => {
       const payload = {
         ...form,
+        resumeUrl,
         experienceYears: Number(form.experienceYears),
         currentCTC: form.currentCTC !== '' ? Number(form.currentCTC) : null,
         expectedCTC: form.expectedCTC !== '' ? Number(form.expectedCTC) : null,
@@ -148,6 +176,77 @@ function ResourceModal({ resource, orgId, onClose }: { resource: any; orgId: num
             <label className={lbl}>Skill Set * <span className="text-gray-400 font-normal">(comma-separated)</span></label>
             <input className={inp} value={form.skillSet} onChange={e=>set('skillSet',e.target.value)} placeholder="Java, Spring Boot, MySQL, REST APIs, Microservices"/>
           </div>
+         {/* Resume Upload */}
+<div>
+  <label className={lbl}>Resume *</label>
+
+  <input
+    id="resumeUpload"
+    type="file"
+    accept=".pdf,.doc,.docx"
+    className="hidden"
+    onChange={async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setResumeFile(file);
+      await uploadResume(file);
+    }}
+  />
+
+  <label
+    htmlFor="resumeUpload"
+    className="flex flex-col items-center justify-center w-full border-2 border-dashed border-indigo-300 rounded-2xl p-6 cursor-pointer hover:border-indigo-500 hover:bg-indigo-50 transition"
+  >
+    {!resumeFile ? (
+      <>
+        <div className="text-5xl mb-3">📄</div>
+
+        <h3 className="font-semibold text-gray-800">
+          Drag & Drop Resume Here
+        </h3>
+
+        <p className="text-gray-400 text-sm mt-1">
+          or click to browse
+        </p>
+
+        <span className="mt-4 px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium">
+          Browse Resume
+        </span>
+
+        <p className="text-xs text-gray-400 mt-3">
+          PDF, DOC, DOCX • Max 5 MB
+        </p>
+      </>
+    ) : (
+      <>
+        <div className="text-5xl mb-3">📄</div>
+
+        <h3 className="font-semibold text-gray-800">
+          {resumeFile.name}
+        </h3>
+
+        <p className="text-sm text-gray-500">
+          {(resumeFile.size / 1024 / 1024).toFixed(2)} MB
+        </p>
+
+        {uploadingResume ? (
+          <p className="text-blue-600 mt-3 font-medium">
+            ☁ Uploading to Cloud...
+          </p>
+        ) : (
+          <p className="text-green-600 mt-3 font-medium">
+            ✔ Uploaded Successfully
+          </p>
+        )}
+
+        <span className="mt-4 text-indigo-600 text-sm font-medium">
+          Replace Resume
+        </span>
+      </>
+    )}
+  </label>
+</div>
 
           {/* Notes */}
           <div>

@@ -520,22 +520,35 @@ export default function DynamicHomePage() {
       )}
 
       {/* ── Org Settings: referral offer (floating) ── */}
-      {s.showReferralOffer && s.referralOfferText && (
-        <ReferralBanner text={s.referralOfferText} primary={primary} secondary={secondary}/>
-      )}
+    {/*
+{s.showCourseBatches && (
+  <CourseBatchesSection
+    orgId={org.id}
+    primary={primary}
+    secondary={secondary}
+  />
+)}
+*/}
 
       {/* ── Existing template: hero, categories, courses, instructors (UNCHANGED) ── */}
       <Template {...props} />
 
       {/* ── Org Settings: Course Batches ── */}
-      {s.showCourseBatches && (
+      {/*{s.showCourseBatches && (
         <CourseBatchesSection orgId={org.id} primary={primary} secondary={secondary}/>
-      )}
+      )}*/}
 
       {/* ── Org Settings: About Us ── */}
-      {s.showAboutUs !== false && (
-        <AboutUsSection org={org} settings={s} primary={primary} secondary={secondary}/>
-      )}
+      {/*
+{s.showAboutUs !== false && (
+  <AboutUsSection
+    org={org}
+    settings={s}
+    primary={primary}
+    secondary={secondary}
+  />
+)}
+*/}
 
       {/* ── Org Settings: Openings ── */}
       {s.showOpenings && s.openingsContent && (
@@ -553,9 +566,16 @@ export default function DynamicHomePage() {
       )}
 
       {/* ── Org Settings: Contact Us ── */}
-      {s.showContactUs !== false && (
-        <ContactUsSection org={org} settings={s} primary={primary} secondary={secondary}/>
-      )}
+     {/*
+{s.showContactUs !== false && (
+  <ContactUsSection
+    org={org}
+    settings={s}
+    primary={primary}
+    secondary={secondary}
+  />
+)}
+*/}
     </div>
   );
 }
